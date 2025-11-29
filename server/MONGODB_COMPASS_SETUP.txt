@@ -1,0 +1,40 @@
+USING MONGODB COMPASS WITH ATLAS
+==================================
+
+STEP 1: Install MongoDB Compass
+--------------------------------
+1. Download from: https://www.mongodb.com/try/download/compass
+2. Install for your operating system (Linux/Windows/Mac)
+3. Open MongoDB Compass
+
+STEP 2: Get Connection String from Atlas
+-----------------------------------------
+1. In MongoDB Atlas, click "Connect" button on your cluster
+2. Choose "MongoDB Compass" (not "Drivers")
+3. You'll see a connection string like:
+   mongodb+srv://username:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+
+STEP 3: Replace Password in Connection String
+----------------------------------------------
+1. Replace <password> with your actual database password
+2. Add database name at the end (before the ?):
+   mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/secure-messaging?retryWrites=true&w=majority
+
+STEP 4: Connect in Compass
+----------------------------
+1. Open MongoDB Compass
+2. Paste the connection string in the connection field
+3. Click "Connect"
+4. You should see your databases and collections
+
+STEP 5: Use Same Connection String in Your App
+-----------------------------------------------
+The connection string that works in Compass will work in your .env file too!
+
+BENEFITS OF USING COMPASS:
+- Visual database browser
+- Easy to see your data
+- Test queries
+- Verify collections and documents
+- Great for debugging
+

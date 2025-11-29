@@ -1,0 +1,85 @@
+/**
+ * Messaging Service
+ * Handles encrypted message sending and receiving
+ */
+
+import { encryptMessageWithMetadata, decryptMessageWithMetadata } from '../crypto/encryption';
+import replayProtection from '../crypto/replayProtection';
+
+class MessagingService {
+  constructor() {
+    this.sessionKeys = new Map(); // userId -> sessionKey
+    this.messageQueue = [];
+  }
+
+  /**
+   * Store session key for a user
+   */
+  setSessionKey(userId, sessionKey) {
+    this.sessionKeys.set(userId, sessionKey);
+  }
+
+  /**
+   * Get session key for a user
+   */
+  getSessionKey(userId) {
+    return this.sessionKeys.get(userId);
+  }
+
+  /**
+   * Encrypt and prepare message for sending
+   */
+  async encryptMessage(userId, plaintext) {
+    const sessionKey = this.getSessionKey(userId);
+    
+    if (!sessionKey) {
+      throw new Error('No session key established with this user');
+    }
+
+    // Get next sequence number
+    const sequenceNumber = replayProtection.getNextSequenceNumber(userId);
+
+    // Encrypt with metadata
+    const encrypted = await encryptMessageWithMetadata(
+      sessionKey,
+      plaintext,
+      sequenceNumber
+    );
+
+    return {
+      ...encrypted,
+      senderId: JSON.parse(localStorage.getItem('user')).id,
+      receiverId: userId,
+    };
+  }
+
+  /**
+   * Decrypt and verify received message
+   */
+  async decryptMessage(encryptedData) {
+    const sessionKey = this.getSessionKey(encryptedData.senderId);
+    
+    if (!sessionKey) {
+      throw new Error('No session key established with sender');
+    }
+
+    // Verify replay protection
+    await replayProtection.checkMessage(
+      encryptedData.nonce,
+      encryptedData.timestamp,
+      encryptedData.sequenceNumber,
+      encryptedData.senderId
+    );
+
+    // Decrypt
+    const decrypted = await decryptMessageWithMetadata(sessionKey, encryptedData);
+
+    return decrypted.plaintext;
+  }
+}
+
+// Singleton instance
+const messagingService = new MessagingService();
+
+export default messagingService;
+

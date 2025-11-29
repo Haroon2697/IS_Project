@@ -1,6 +1,18 @@
-const User = require('../models/User');
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const { logAuthEvent } = require('../utils/logger');
+const memoryStore = require('../storage/memoryStore');
+
+// Check if MongoDB is connected (dynamic check)
+const useMongoDB = () => mongoose.connection.readyState === 1;
+let User = null;
+
+// Try to load User model (will fail gracefully if MongoDB not connected)
+try {
+  User = require('../models/User');
+} catch (e) {
+  console.log('⚠️  User model not available - using memory store');
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -30,10 +42,25 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({
-      $or: [{ username }, { email }],
+    // Hash password (use static method or direct argon2)
+    const argon2 = require('argon2');
+    const passwordHash = await argon2.hash(password, {
+      type: argon2.argon2id,
+      memoryCost: 65536,
+      timeCost: 3,
+      parallelism: 4,
     });
+
+    // Check if user already exists
+    let existingUser = null;
+    if (useMongoDB() && User) {
+      existingUser = await User.findOne({
+        $or: [{ username }, { email }],
+      });
+    } else {
+      existingUser = await memoryStore.findUser({ username }) || 
+                     await memoryStore.findUser({ email });
+    }
 
     if (existingUser) {
       return res.status(400).json({
@@ -41,23 +68,36 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Hash password
-    const passwordHash = await User.hashPassword(password);
-
     // Create user
-    const user = new User({
-      username,
-      email,
-      passwordHash,
-    });
-
-    await user.save();
+    let user;
+    if (useMongoDB() && User) {
+      user = new User({
+        username,
+        email,
+        passwordHash,
+        publicKey: req.body.publicKey || null,
+      });
+      await user.save();
+    } else {
+      // Use memory store
+      user = await memoryStore.createUser({
+        username,
+        email,
+        passwordHash,
+        publicKey: req.body.publicKey || null,
+      });
+    }
 
     // Generate token
     const token = generateToken(user._id);
 
     // Update last login
-    await user.updateLastLogin();
+    if (useMongoDB() && user.updateLastLogin) {
+      await user.updateLastLogin();
+    } else {
+      user.lastLogin = new Date();
+      await memoryStore.updateUser(user._id, { lastLogin: user.lastLogin });
+    }
 
     // Log successful registration
     await logAuthEvent('AUTH_SUCCESS', user._id, req.ip, true);
@@ -96,9 +136,15 @@ exports.login = async (req, res) => {
     }
 
     // Find user
-    const user = await User.findOne({
-      $or: [{ username }, { email: username }],
-    });
+    let user;
+    if (useMongoDB() && User) {
+      user = await User.findOne({
+        $or: [{ username }, { email: username }],
+      });
+    } else {
+      user = await memoryStore.findUser({ username }) || 
+             await memoryStore.findUser({ email: username });
+    }
 
     if (!user) {
       // Log failed login attempt
@@ -109,7 +155,13 @@ exports.login = async (req, res) => {
     }
 
     // Verify password
-    const isValidPassword = await user.verifyPassword(password);
+    const argon2 = require('argon2');
+    let isValidPassword;
+    if (useMongoDB() && user.verifyPassword) {
+      isValidPassword = await user.verifyPassword(password);
+    } else {
+      isValidPassword = await argon2.verify(user.passwordHash, password);
+    }
 
     if (!isValidPassword) {
       // Log failed login attempt
@@ -126,7 +178,12 @@ exports.login = async (req, res) => {
     const token = generateToken(user._id);
 
     // Update last login
-    await user.updateLastLogin();
+    if (useMongoDB() && user.updateLastLogin) {
+      await user.updateLastLogin();
+    } else {
+      user.lastLogin = new Date();
+      await memoryStore.updateUser(user._id, { lastLogin: user.lastLogin });
+    }
 
     // Log successful login
     await logAuthEvent('AUTH_SUCCESS', user._id, req.ip, true);
@@ -156,7 +213,17 @@ exports.login = async (req, res) => {
 // Get current user (protected route)
 exports.getCurrentUser = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select('-passwordHash');
+    let user;
+    if (useMongoDB() && User) {
+      user = await User.findById(req.userId).select('-passwordHash');
+    } else {
+      user = await memoryStore.findUser({ _id: req.userId });
+      if (user) {
+        // Remove password hash
+        const { passwordHash, ...userWithoutPassword } = user;
+        user = userWithoutPassword;
+      }
+    }
 
     if (!user) {
       return res.status(404).json({

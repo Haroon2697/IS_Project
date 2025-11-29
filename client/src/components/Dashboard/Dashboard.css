@@ -64,3 +64,28 @@
   margin-bottom: 10px;
 }
 
+.selected-user-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background: #e8f5e9;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.btn-change-user {
+  padding: 6px 12px;
+  background: #ff9800;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+
+.btn-change-user:hover {
+  background: #f57c00;
+}
+

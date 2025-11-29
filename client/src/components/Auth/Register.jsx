@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authAPI } from '../../api/auth';
+import { generateAndStoreKeys } from '../../crypto/keyManagement';
 import './Auth.css';
 
 const Register = () => {
@@ -42,11 +43,24 @@ const Register = () => {
 
     try {
       const { confirmPassword, ...userData } = formData;
+      
+      // Generate cryptographic keys BEFORE registration
+      console.log('Generating cryptographic keys...');
+      const keyData = await generateAndStoreKeys(userData.username, formData.password);
+      
+      // Add public key to registration data
+      userData.publicKey = JSON.stringify(keyData.publicKey);
+      
+      // Register user with public key
       const response = await authAPI.register(userData);
       
       // Store token
       localStorage.setItem('token', response.token);
       localStorage.setItem('user', JSON.stringify(response.user));
+      
+      console.log('✅ Keys generated and stored securely!');
+      console.log('✅ Private key stored in IndexedDB (encrypted)');
+      console.log('✅ Public key sent to server');
       
       // Redirect to dashboard
       navigate('/dashboard');

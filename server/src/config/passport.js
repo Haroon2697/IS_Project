@@ -1,7 +1,17 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const User = require('../models/User');
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
+const memoryStore = require('../storage/memoryStore');
+
+// Check if MongoDB is connected (dynamic check)
+const useMongoDB = () => mongoose.connection.readyState === 1;
+let User = null;
+try {
+  User = require('../models/User');
+} catch (e) {
+  console.log('⚠️  User model not available for OAuth - using memory store');
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -13,7 +23,12 @@ passport.serializeUser((user, done) => {
 // Deserialize user from session
 passport.deserializeUser(async (id, done) => {
   try {
-    const user = await User.findById(id);
+    let user;
+    if (useMongoDB() && User) {
+      user = await User.findById(id);
+    } else {
+      user = await memoryStore.findUser({ _id: id });
+    }
     done(null, user);
   } catch (error) {
     done(error, null);
@@ -31,35 +46,63 @@ passport.use(
     async (accessToken, refreshToken, profile, done) => {
       try {
         // Check if user exists with this Google ID
-        let user = await User.findOne({ googleId: profile.id });
+        let user;
+        if (useMongoDB() && User) {
+          user = await User.findOne({ googleId: profile.id });
+        } else {
+          user = await memoryStore.findUser({ googleId: profile.id });
+        }
 
         if (user) {
           // User exists, update last login
-          await user.updateLastLogin();
+          if (useMongoDB() && user.updateLastLogin) {
+            await user.updateLastLogin();
+          } else {
+            user.lastLogin = new Date();
+            await memoryStore.updateUser(user._id, { lastLogin: user.lastLogin });
+          }
           return done(null, user);
         }
 
         // Check if user exists with this email
-        user = await User.findOne({ email: profile.emails[0].value });
+        if (useMongoDB() && User) {
+          user = await User.findOne({ email: profile.emails[0].value });
+        } else {
+          user = await memoryStore.findUser({ email: profile.emails[0].value });
+        }
 
         if (user) {
           // Link Google account to existing user
           user.googleId = profile.id;
-          await user.save();
-          await user.updateLastLogin();
+          if (useMongoDB() && user.save) {
+            await user.save();
+            await user.updateLastLogin();
+          } else {
+            await memoryStore.updateUser(user._id, { googleId: profile.id, lastLogin: new Date() });
+          }
           return done(null, user);
         }
 
         // Create new user
-        user = new User({
-          username: profile.displayName.toLowerCase().replace(/\s+/g, '') + Math.random().toString(36).substring(7),
-          email: profile.emails[0].value,
-          googleId: profile.id,
-          passwordHash: '', // OAuth users don't need password
-        });
-
-        await user.save();
-        await user.updateLastLogin();
+        const username = profile.displayName.toLowerCase().replace(/\s+/g, '') + Math.random().toString(36).substring(7);
+        if (useMongoDB() && User) {
+          user = new User({
+            username,
+            email: profile.emails[0].value,
+            googleId: profile.id,
+            passwordHash: '', // OAuth users don't need password
+          });
+          await user.save();
+          await user.updateLastLogin();
+        } else {
+          user = await memoryStore.createUser({
+            username,
+            email: profile.emails[0].value,
+            googleId: profile.id,
+            passwordHash: '', // OAuth users don't need password
+            lastLogin: new Date(),
+          });
+        }
         return done(null, user);
       } catch (error) {
         return done(error, null);

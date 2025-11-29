@@ -44,6 +44,8 @@ const rateLimiter = require('./src/middleware/rateLimiter');
 const authRoutes = require('./src/routes/auth');
 const oauthRoutes = require('./src/routes/oauth');
 const twoFactorRoutes = require('./src/routes/twoFactor');
+const keyExchangeRoutes = require('./src/routes/keyExchange');
+const userRoutes = require('./src/routes/users');
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -58,24 +60,28 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', rateLimiter(15 * 60 * 1000, 5), authRoutes); // 5 requests per 15 minutes
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/2fa', twoFactorRoutes);
+app.use('/api/keyexchange', keyExchangeRoutes);
+app.use('/api/users', userRoutes);
 
-// MongoDB connection (optional for initial testing)
+// MongoDB connection (optional - will use in-memory storage if not connected)
 if (process.env.MONGODB_URI) {
   mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 10s
   })
     .then(() => {
       console.log('✅ MongoDB connected successfully');
       console.log(`📦 Database: ${mongoose.connection.name}`);
     })
     .catch(err => {
-      console.log('⚠️  MongoDB not connected (optional for testing)');
-      console.log('💡 To enable MongoDB, install and start it:');
-      console.log('   Download: https://www.mongodb.com/try/download/community');
+      console.log('⚠️  MongoDB connection failed - using in-memory storage');
+      console.log('💡 Server will work without MongoDB for testing');
+      console.log('💡 To enable MongoDB, configure MONGODB_URI in .env file');
     });
 } else {
-  console.log('⚠️  MongoDB URI not configured (server will run without database)');
+  console.log('ℹ️  MongoDB URI not configured - using in-memory storage');
+  console.log('💡 This is fine for testing cryptographic features!');
 }
 
 // Error handling middleware

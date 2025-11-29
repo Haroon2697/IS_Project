@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { authAPI } from '../../api/auth';
 import { twoFactorAPI } from '../../api/twoFactor';
+import { retrievePrivateKey, hasKeys } from '../../crypto/keyManagement';
 import OAuthLogin from './OAuthLogin';
 import TwoFactorVerification from './TwoFactorVerification';
 import './Auth.css';
@@ -60,6 +61,21 @@ const Login = () => {
         setUserId(response.user.id);
         setToken(response.token); // Store token temporarily
         return;
+      }
+      
+      // Retrieve and verify private key exists
+      try {
+        const userHasKeys = await hasKeys(response.user.username);
+        if (userHasKeys) {
+          // Verify we can decrypt the key (validates password)
+          await retrievePrivateKey(response.user.username, formData.password);
+          console.log('✅ Private key retrieved and verified');
+        } else {
+          console.warn('⚠️ No keys found for user. Keys will be generated on first use.');
+        }
+      } catch (keyError) {
+        console.error('Key retrieval error:', keyError);
+        // Don't block login if key retrieval fails (for OAuth users)
       }
       
       // Store token
