@@ -1,0 +1,40 @@
+STEP-BY-STEP GOOGLE OAUTH SETUP:
+
+1. In Google Cloud Console (where you are now):
+   - Click on "APIs & Services" in Quick access
+   - Or go to: https://console.cloud.google.com/apis/credentials
+
+2. Click "+ CREATE CREDENTIALS" button
+   - Select "OAuth client ID"
+
+3. If prompted, configure OAuth consent screen first:
+   - User Type: External (for testing)
+   - App name: "Secure Messaging"
+   - User support email: Your email
+   - Developer contact: Your email
+   - Click "Save and Continue"
+   - Scopes: Just click "Save and Continue" (default is fine)
+   - Test users: Add your email, click "Save and Continue"
+   - Summary: Click "Back to Dashboard"
+
+4. Create OAuth Client ID:
+   - Application type: "Web application"
+   - Name: "Secure Messaging Web Client"
+   - Authorized JavaScript origins: 
+     * http://localhost:5000
+   - Authorized redirect URIs:
+     * http://localhost:5000/api/oauth/google/callback
+   - Click "CREATE"
+
+5. Copy the credentials:
+   - Client ID: (starts with something like 123456789-abc...)
+   - Client Secret: (click "Show" to reveal)
+
+6. Add to your .env file in server directory:
+   GOOGLE_CLIENT_ID=paste-client-id-here
+   GOOGLE_CLIENT_SECRET=paste-client-secret-here
+   GOOGLE_CALLBACK_URL=http://localhost:5000/api/oauth/google/callback
+   SESSION_SECRET=any-random-string-here
+   SERVER_URL=http://localhost:5000
+   CLIENT_URL=http://localhost:3000
+
