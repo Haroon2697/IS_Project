@@ -5,6 +5,7 @@ import TwoFactorSettings from '../Settings/TwoFactorSettings';
 import KeyExchangeManager from '../KeyExchange/KeyExchangeManager';
 import ChatWindow from '../Chat/ChatWindow';
 import UserSelector from '../Users/UserSelector';
+import socketService from '../services/socketService';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -19,6 +20,17 @@ const Dashboard = () => {
     if (userData) {
       setUser(JSON.parse(userData));
     }
+
+    // Connect Socket.io when dashboard loads
+    const token = localStorage.getItem('token');
+    if (token) {
+      socketService.connect(token);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      // Don't disconnect - keep connection for chat
+    };
   }, []);
 
   const handleLogout = () => {

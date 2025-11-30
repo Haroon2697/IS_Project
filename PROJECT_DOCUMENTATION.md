@@ -125,9 +125,9 @@ End-to-end encrypted messaging system where:
    - Nonce (replay protection)
    - Timestamp
    - Sequence number
-4. Sends encrypted message to server
-5. Server forwards to recipient (Socket.io)
-6. Recipient decrypts client-side
+5. Sends encrypted message via Socket.io (real-time WebSocket)
+6. Server forwards to recipient via Socket.io (instant delivery)
+7. Recipient decrypts client-side
 
 **Files:**
 - `client/src/crypto/encryption.js`
@@ -201,6 +201,40 @@ Opens `http://localhost:3000`
 ---
 
 ## 🧪 TESTING GUIDE
+
+### Socket.io Testing (NEW)
+
+**Prerequisites:**
+- Server running: `cd server && npm run dev`
+- Client running: `cd client && npm start`
+- Two browser windows (or one normal + one incognito)
+
+**Quick Socket.io Test:**
+1. Login to the application
+2. Open browser console (F12)
+3. Look for these messages:
+   - `✅ Socket connected: [socket-id]`
+   - `✅ Socket authenticated: {userId: ...}`
+4. Check chat header - should show 🟢 (green = connected)
+5. If you see 🔴 (red), check server console for errors
+
+**Real-Time Messaging Test:**
+1. Register 2 users in different browsers
+2. Login both users
+3. User 1: Select User 2 from user list
+4. Click "Establish Secure Connection"
+5. Wait for "Secure channel established" message
+6. User 1: Type and send a message
+7. **Expected:** Message appears instantly in User 2's browser
+8. User 2: Reply with a message
+9. **Expected:** Message appears instantly in User 1's browser
+
+**Connection Status Test:**
+- 🟢 Green dot = Connected and authenticated
+- 🔴 Red dot = Disconnected or not authenticated
+- Check browser console for connection errors
+
+---
 
 ### Quick Test
 
@@ -286,13 +320,47 @@ Open browser console and run:
 })();
 ```
 
-#### Test 5: Two Users (Key Exchange)
+#### Test 5: Two Users (Key Exchange & Real-Time Messaging)
 1. Register `testuser1` in browser 1
 2. Register `testuser2` in browser 2 (incognito)
-3. Login as `testuser1`
-4. Select `testuser2` from user list
-5. Click "Establish Secure Connection"
-6. Check console for key exchange messages
+3. Login as `testuser1` in browser 1
+4. Login as `testuser2` in browser 2
+5. In browser 1: Select `testuser2` from user list
+6. Click "Establish Secure Connection"
+7. Check console for key exchange messages
+8. Wait for "Secure channel established" message
+9. Send a message from browser 1
+10. **Verify:** Message appears instantly in browser 2 (real-time!)
+11. Send a message from browser 2
+12. **Verify:** Message appears instantly in browser 1
+
+**Expected Results:**
+- ✅ Key exchange completes successfully
+- ✅ Connection indicator shows 🟢 (connected)
+- ✅ Messages appear in real-time without page refresh
+- ✅ Messages are encrypted (check network tab - only ciphertext visible)
+- ✅ Messages decrypt correctly on recipient side
+
+#### Test 6: Socket.io Connection Status
+1. Login to the application
+2. Open browser console
+3. Check for: "✅ Socket connected: [socket-id]"
+4. Check for: "✅ Socket authenticated: {userId: ...}"
+5. Look at chat header - should show 🟢 (green dot = connected)
+6. Disconnect internet briefly
+7. **Verify:** Connection indicator changes to 🔴
+8. Reconnect internet
+9. **Verify:** Automatically reconnects and shows 🟢
+
+#### Test 7: Real-Time Message Delivery
+1. Set up 2 users (as in Test 5)
+2. Establish secure connection
+3. In browser 1, type a message but don't send yet
+4. In browser 2, watch the chat window
+5. Send message from browser 1
+6. **Verify:** Message appears in browser 2 within 1 second
+7. Send multiple messages quickly
+8. **Verify:** All messages appear in order in browser 2
 
 ---
 
@@ -309,7 +377,7 @@ Open browser console and run:
 
 **Backend (Node.js/Express):**
 - REST API endpoints
-- Socket.io server (to be implemented)
+- Socket.io server ✅ (implemented)
 - Authentication middleware
 - Key exchange relay
 - User management
@@ -328,19 +396,21 @@ User → Client → Generate Keys → Encrypt Private Key → Store in IndexedDB
                               Send Public Key → Server → Store in DB
 ```
 
-**Key Exchange:**
+**Key Exchange (Real-Time via Socket.io):**
 ```
-Alice → Init Message → Server → Bob
-Bob → Response → Server → Alice
-Alice → Confirm → Server → Bob
-Bob → Acknowledge → Server → Alice
+Alice → Init Message → Socket.io Server → Bob (real-time)
+Bob → Response → Socket.io Server → Alice (real-time)
+Alice → Confirm → Socket.io Server → Bob (real-time)
+Bob → Acknowledge → Socket.io Server → Alice (real-time)
 Both have session key
 ```
 
-**Message Sending:**
+**Message Sending (Real-Time via Socket.io):**
 ```
-User → Encrypt Message → Server → Recipient → Decrypt Message
+User → Encrypt Message → Socket.io → Server → Socket.io → Recipient → Decrypt Message
+     (client-side)      (WebSocket)          (WebSocket)  (client-side)
 ```
+**Note:** Messages are delivered in real-time via WebSocket connections. Server only sees encrypted ciphertext.
 
 ---
 

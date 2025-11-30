@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import messagingService from '../../services/messaging';
+import socketService from '../../services/socketService';
 import './Chat.css';
+
+// Import socketService at module level for status check
 
 const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
   const [messages, setMessages] = useState([]);
@@ -8,6 +11,44 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    // Connect to Socket.io on mount
+    const token = localStorage.getItem('token');
+    if (token) {
+      socketService.connect(token);
+    }
+
+    // Set up message listener
+    const handleReceive = async (encryptedMessage) => {
+      try {
+        // Only process messages for this recipient
+        if (encryptedMessage.senderId !== recipientId) {
+          return;
+        }
+
+        const plaintext = await messagingService.decryptMessage(encryptedMessage);
+        
+        setMessages(prev => [...prev, {
+          id: Date.now(),
+          text: plaintext,
+          senderId: encryptedMessage.senderId,
+          timestamp: new Date(encryptedMessage.timestamp),
+          encrypted: encryptedMessage,
+        }]);
+      } catch (err) {
+        console.error('Failed to decrypt message:', err);
+        setError('Failed to decrypt message: ' + err.message);
+      }
+    };
+
+    socketService.onMessage(handleReceive);
+
+    // Cleanup on unmount
+    return () => {
+      socketService.offMessage(handleReceive);
+    };
+  }, [recipientId]);
 
   useEffect(() => {
     if (sessionKey) {
@@ -35,16 +76,26 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
 
       // Add to local messages (optimistic update)
       const user = JSON.parse(localStorage.getItem('user'));
+      const messageId = Date.now();
       setMessages(prev => [...prev, {
-        id: Date.now(),
+        id: messageId,
         text: inputMessage,
         senderId: user.id,
         timestamp: new Date(),
         encrypted: encryptedMessage,
       }]);
 
-      // TODO: Send to server/WebSocket
-      console.log('Encrypted message:', encryptedMessage);
+      // Send via Socket.io
+      const sent = socketService.sendMessage({
+        ...encryptedMessage,
+        messageId,
+      });
+
+      if (!sent) {
+        setError('Failed to send message - not connected');
+        // Remove optimistic update if send failed
+        setMessages(prev => prev.filter(msg => msg.id !== messageId));
+      }
 
       setInputMessage('');
     } catch (err) {
@@ -74,11 +125,18 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
     <div className="chat-window">
       <div className="chat-header">
         <h3>{recipientUsername}</h3>
-        {sessionKey ? (
-          <span className="secure-indicator">🔒 Secure</span>
-        ) : (
-          <span className="insecure-indicator">⚠️ Not Secure</span>
-        )}
+        <div className="status-indicators">
+          {sessionKey ? (
+            <span className="secure-indicator">🔒 Secure</span>
+          ) : (
+            <span className="insecure-indicator">⚠️ Not Secure</span>
+          )}
+          {socketService.isReady() ? (
+            <span className="connection-indicator" title="Connected">🟢</span>
+          ) : (
+            <span className="connection-indicator" title="Disconnected">🔴</span>
+          )}
+        </div>
       </div>
 
       <div className="messages-container">
