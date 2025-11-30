@@ -5,7 +5,7 @@ import TwoFactorSettings from '../Settings/TwoFactorSettings';
 import KeyExchangeManager from '../KeyExchange/KeyExchangeManager';
 import ChatWindow from '../Chat/ChatWindow';
 import UserSelector from '../Users/UserSelector';
-import socketService from '../services/socketService';
+import socketService from '../../services/socketService';
 import './Dashboard.css';
 
 const Dashboard = () => {
