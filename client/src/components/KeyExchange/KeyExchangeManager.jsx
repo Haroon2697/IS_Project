@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createInitMessage, processInitMessage, createResponseMessage, processResponseMessage, createConfirmationMessage, verifyConfirmationMessage, createAcknowledgmentMessage } from '../../crypto/keyExchange';
 import { retrievePrivateKey, importPublicKey } from '../../crypto/keyManagement';
 import { keyExchangeAPI } from '../../api/keyExchange';
@@ -11,35 +11,67 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
   const [sessionKey, setSessionKey] = useState(null);
   const [longTermPrivateKey, setLongTermPrivateKey] = useState(null);
   const [longTermPublicKey, setLongTermPublicKey] = useState(null);
-  const [ephemeralPrivateKeys, setEphemeralPrivateKeys] = useState(new Map());
+  // Use useRef to persist ephemeral keys across re-renders
+  const ephemeralPrivateKeysRef = React.useRef(new Map());
+  const [keysLoading, setKeysLoading] = useState(false);
+  const [keysLoaded, setKeysLoaded] = useState(false);
 
-  // Initialize: Get user's keys and connect Socket.io
-  useEffect(() => {
-    const loadKeys = async () => {
-      try {
-        const user = JSON.parse(localStorage.getItem('user'));
-        const password = prompt('Enter your password to load keys:');
-        
-        if (!password) return;
-        
-        const privateKey = await retrievePrivateKey(user.username, password);
-        setLongTermPrivateKey(privateKey);
-        
-        // Get public key from server
-        const publicKeyResponse = await keyExchangeAPI.getUserPublicKey(user.id);
-        const publicKeyJwk = typeof publicKeyResponse.publicKey === 'string' 
-          ? JSON.parse(publicKeyResponse.publicKey)
-          : publicKeyResponse.publicKey;
-        const publicKey = await importPublicKey(publicKeyJwk);
-        setLongTermPublicKey(publicKey);
-      } catch (err) {
-        setError('Failed to load keys: ' + err.message);
-      }
-    };
-    
-    if (currentUserId) {
-      loadKeys();
+  // Load keys function (called on button click to avoid React concurrent rendering issues)
+  const loadKeys = async () => {
+    // Don't load keys if already loaded or currently loading
+    if (keysLoaded || keysLoading || longTermPrivateKey || longTermPublicKey) {
+      return;
     }
+
+    setKeysLoading(true);
+    setError('');
+    
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      if (!user) {
+        setKeysLoading(false);
+        setError('User not found. Please log in again.');
+        return;
+      }
+
+      // Use setTimeout to avoid React concurrent rendering issues with prompt()
+      const password = await new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(prompt('Enter your password to load keys:'));
+        }, 100);
+      });
+      
+      if (!password) {
+        setKeysLoading(false);
+        setError('Password required to load keys');
+        return;
+      }
+      
+      console.log('🔑 Loading keys...');
+      const privateKey = await retrievePrivateKey(user.username, password);
+      setLongTermPrivateKey(privateKey);
+      console.log('✅ Private key loaded');
+      
+      // Get public key from server
+      const publicKeyResponse = await keyExchangeAPI.getUserPublicKey(user.id);
+      const publicKeyJwk = typeof publicKeyResponse.publicKey === 'string' 
+        ? JSON.parse(publicKeyResponse.publicKey)
+        : publicKeyResponse.publicKey;
+      const publicKey = await importPublicKey(publicKeyJwk);
+      setLongTermPublicKey(publicKey);
+      console.log('✅ Public key loaded');
+      
+      setKeysLoaded(true);
+    } catch (err) {
+      console.error('❌ Failed to load keys:', err);
+      setError('Failed to load keys: ' + err.message);
+    } finally {
+      setKeysLoading(false);
+    }
+  };
+
+  // Initialize: Connect Socket.io (keys loaded on demand)
+  useEffect(() => {
 
     // Connect Socket.io for key exchange
     const token = localStorage.getItem('token');
@@ -58,7 +90,20 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
           await handleResponseMessage(message);
         } else if (message.type === 'init' || message.messageType === 'init') {
           // This is an init from someone else - we should respond
-          await handleInitMessage(message);
+          // Check if keys are loaded first
+          if (!longTermPrivateKey || !longTermPublicKey) {
+            console.log('⏳ Keys not loaded yet, waiting 2 seconds...');
+            setTimeout(async () => {
+              if (longTermPrivateKey && longTermPublicKey) {
+                await handleInitMessage(message);
+              } else {
+                console.error('Keys still not loaded after waiting');
+                setError('Keys not loaded. Please refresh the page and enter your password.');
+              }
+            }, 2000);
+          } else {
+            await handleInitMessage(message);
+          }
         } else if (message.type === 'confirm' || message.messageType === 'confirm') {
           // This is a confirmation
           await handleConfirmMessage(message);
@@ -77,7 +122,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
     return () => {
       socketService.offKeyExchange(handleKeyExchangeMessage);
     };
-  }, [currentUserId, recipientId]);
+  }, [currentUserId, recipientId, longTermPrivateKey, longTermPublicKey, keysLoaded, keysLoading]);
 
   // Handle response message
   const handleResponseMessage = async (responseMessage) => {
@@ -85,18 +130,46 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       const storedInit = localStorage.getItem('keyExchange_init');
       if (!storedInit) {
         console.error('No stored init message found');
+        setError('No stored init message. Please restart key exchange.');
         return;
       }
 
-      const { message: initMessage } = JSON.parse(storedInit);
+      const { message: initMessage, recipientId: storedRecipientId } = JSON.parse(storedInit);
       
-      // Get ephemeral private key from component state
-      const ephemeralPrivateKey = ephemeralPrivateKeys.get(recipientId);
+      // The sender of the response is the recipient we initiated with
+      const responseSenderId = responseMessage.senderId || responseMessage.receiverId;
+      
+      // Get ephemeral private key from ref (persists across re-renders)
+      // Use the stored recipientId (who we initiated with) to find the key
+      console.log('🔍 Looking for ephemeral key for recipient:', storedRecipientId);
+      console.log('🔍 Ephemeral keys map size:', ephemeralPrivateKeysRef.current.size);
+      console.log('🔍 Available keys:', Array.from(ephemeralPrivateKeysRef.current.keys()));
+      
+      let ephemeralPrivateKey = ephemeralPrivateKeysRef.current.get(storedRecipientId);
+      
+      // If not found, try with response sender ID (might be different format)
+      if (!ephemeralPrivateKey && responseSenderId) {
+        console.log('🔍 Trying with response sender ID:', responseSenderId);
+        ephemeralPrivateKey = ephemeralPrivateKeysRef.current.get(responseSenderId);
+      }
+      
+      // Try all keys in the map if still not found (fallback)
+      if (!ephemeralPrivateKey && ephemeralPrivateKeysRef.current.size > 0) {
+        console.log('🔍 Trying first available key as fallback');
+        ephemeralPrivateKey = Array.from(ephemeralPrivateKeysRef.current.values())[0];
+      }
       
       if (!ephemeralPrivateKey) {
-        setError('Ephemeral private key not found. Please restart key exchange.');
+        console.error('❌ Ephemeral key not found in state');
+        console.error('Stored recipientId:', storedRecipientId);
+        console.error('Response senderId:', responseSenderId);
+        console.error('Map contents:', Array.from(ephemeralPrivateKeysRef.current.entries()));
+        setError('Ephemeral private key not found. Please click "Establish Secure Connection" again.');
+        setStatus('idle');
         return;
       }
+      
+      console.log('✅ Ephemeral key found!');
       
       // Process response and derive session key
       const result = await processResponseMessage(
@@ -107,25 +180,37 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       );
 
       if (result && result.sessionKey) {
+        console.log('✅ Session key derived successfully!');
         setSessionKey(result.sessionKey);
         setStatus('confirming');
+        
+        // Store session key temporarily for confirmation verification
+        // Note: We can't store CryptoKey in localStorage, so we'll keep it in state
         
         // Send confirmation
         const confirmMessage = await createConfirmationMessage(
           result.sessionKey,
           result.nonceBob,
           currentUserId,
-          recipientId
+          storedRecipientId
         );
         
         // Send via Socket.io and HTTP
         socketService.sendKeyExchangeMessage({
           ...confirmMessage,
           type: 'confirm',
-          receiverId: recipientId,
+          receiverId: storedRecipientId,
         });
         
         await keyExchangeAPI.sendConfirm(confirmMessage);
+        
+        setStatus('established');
+        onKeyExchangeComplete(result.sessionKey);
+        console.log('✅ Key exchange completed!');
+      } else {
+        console.error('❌ Failed to derive session key from response');
+        setError('Failed to derive session key. Please try again.');
+        setStatus('idle');
       }
     } catch (err) {
       console.error('Error processing response:', err);
@@ -139,6 +224,13 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
     try {
       // Only respond if this is for us
       if (initMessage.receiverId !== currentUserId) {
+        return;
+      }
+
+      // Check if keys are loaded
+      if (!longTermPrivateKey || !longTermPublicKey) {
+        console.error('Keys not loaded yet, cannot respond to init message');
+        setError('Keys not loaded. Please refresh the page and try again.');
         return;
       }
 
@@ -267,13 +359,17 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
         receiverId: recipientId,
       });
 
-      // Store ephemeral private key in component state
+      // Store ephemeral private key in ref (persists across re-renders)
+      // This is critical - we need this key to process the response
       if (initMessage._ephemeralPrivateKey) {
-        setEphemeralPrivateKeys(prev => {
-          const newMap = new Map(prev);
-          newMap.set(recipientId, initMessage._ephemeralPrivateKey);
-          return newMap;
-        });
+        console.log('💾 Storing ephemeral private key for recipient:', recipientId);
+        ephemeralPrivateKeysRef.current.set(recipientId, initMessage._ephemeralPrivateKey);
+        console.log('💾 Ephemeral key stored. Map size:', ephemeralPrivateKeysRef.current.size);
+      } else {
+        console.error('❌ No ephemeral private key in init message!');
+        setError('Failed to store ephemeral key. Please try again.');
+        setStatus('idle');
+        return;
       }
       
       // Store init message data for later use (without private key)
@@ -287,6 +383,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       };
       
       localStorage.setItem('keyExchange_init', JSON.stringify(initData));
+      console.log('💾 Init message stored in localStorage');
 
       setStatus('initiated');
     } catch (err) {
@@ -307,9 +404,18 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       </div>
       
       {status === 'idle' && (
-        <button onClick={handleInitiate} className="btn-primary">
-          Establish Secure Connection
-        </button>
+        <>
+          {!keysLoaded && !keysLoading && (
+            <button onClick={loadKeys} className="btn-primary" disabled={keysLoading}>
+              {keysLoading ? 'Loading Keys...' : 'Load Keys'}
+            </button>
+          )}
+          {keysLoaded && (
+            <button onClick={handleInitiate} className="btn-primary">
+              Establish Secure Connection
+            </button>
+          )}
+        </>
       )}
       
       {status === 'initiated' && (

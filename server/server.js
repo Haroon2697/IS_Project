@@ -162,12 +162,21 @@ io.on('connection', (socket) => {
       }
       
       const recipientId = message.receiverId || message.recipientId;
-      console.log(`🔑 Key exchange message from ${socket.userId} to ${recipientId}`);
+      const senderId = message.senderId || socket.userId;
+      
+      // Validate: sender and receiver should be different
+      if (senderId === recipientId) {
+        console.error(`❌ Invalid key exchange: sender and receiver are the same (${senderId})`);
+        socket.emit('error', { message: 'Cannot send key exchange to yourself' });
+        return;
+      }
+      
+      console.log(`🔑 Key exchange message from ${senderId} to ${recipientId}`);
       
       // Forward to recipient
       io.to(`user:${recipientId}`).emit('keyexchange:receive', {
         ...message,
-        senderId: socket.userId
+        senderId: senderId // Use the actual sender from message, not socket.userId
       });
     } catch (error) {
       console.error('Key exchange send error:', error);

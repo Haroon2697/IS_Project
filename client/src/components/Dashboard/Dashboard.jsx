@@ -17,21 +17,33 @@ const Dashboard = () => {
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
-    if (userData) {
-      setUser(JSON.parse(userData));
-    }
-
-    // Connect Socket.io when dashboard loads
     const token = localStorage.getItem('token');
-    if (token) {
+    
+    // Check if user is authenticated
+    if (!token || !userData) {
+      console.warn('⚠️ No token or user data found, redirecting to login...');
+      navigate('/login');
+      return;
+    }
+    
+    try {
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
+      
+      // Connect Socket.io when dashboard loads
       socketService.connect(token);
+    } catch (err) {
+      console.error('Failed to parse user data:', err);
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      navigate('/login');
     }
 
     // Cleanup on unmount
     return () => {
       // Don't disconnect - keep connection for chat
     };
-  }, []);
+  }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -71,7 +83,7 @@ const Dashboard = () => {
           
           {!selectedUser ? (
             <UserSelector
-              currentUserId={user?.id}
+              currentUserId={user?.id || user?._id}
               onSelectUser={(selected) => {
                 setSelectedUser(selected);
                 setSessionKey(null);

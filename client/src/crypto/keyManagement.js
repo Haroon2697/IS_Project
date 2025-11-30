@@ -78,11 +78,22 @@ async function generateECDHKeyPair() {
  */
 async function exportPublicKey(publicKey) {
   try {
+    if (!publicKey) {
+      throw new Error('Public key is null or undefined');
+    }
+    
+    // Check if it's a valid CryptoKey object
+    if (!(publicKey instanceof CryptoKey)) {
+      throw new Error('Public key is not a valid CryptoKey object');
+    }
+    
     const exported = await window.crypto.subtle.exportKey('jwk', publicKey);
     return exported;
   } catch (error) {
     console.error('Public key export error:', error);
-    throw new Error('Failed to export public key');
+    console.error('Public key type:', typeof publicKey);
+    console.error('Public key:', publicKey);
+    throw new Error('Failed to export public key: ' + error.message);
   }
 }
 

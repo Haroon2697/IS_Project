@@ -42,7 +42,17 @@ const TwoFactorSettings = () => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    
+    // Check if token exists
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('You are not logged in. Please log in again.');
+      setLoading(false);
+      return;
+    }
+    
     try {
+      console.log('🔐 Verifying 2FA code...');
       await twoFactorAPI.verifyAndEnable(verificationCode);
       setSetupData(null);
       setVerificationCode('');
@@ -50,7 +60,12 @@ const TwoFactorSettings = () => {
       await loadStatus();
       alert('2FA enabled successfully!');
     } catch (err) {
-      setError(err.response?.data?.error || 'Invalid verification code');
+      console.error('2FA verification error:', err);
+      const errorMsg = err.response?.data?.error || err.message || 'Invalid verification code';
+      setError(errorMsg);
+      
+      // Don't redirect on 2FA failure - user is still logged in
+      // Only show error message
     } finally {
       setLoading(false);
     }

@@ -8,8 +8,11 @@ const UserSelector = ({ currentUserId, onSelectUser }) => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    // Only load users if currentUserId is set (user is authenticated)
+    if (currentUserId) {
+      loadUsers();
+    }
+  }, [currentUserId]); // Only reload when currentUserId changes
 
   const loadUsers = async () => {
     try {
@@ -57,27 +60,42 @@ const UserSelector = ({ currentUserId, onSelectUser }) => {
     );
   }
 
+  // Filter out current user on client side as well (backup)
+  const filteredUsers = users.filter(user => {
+    if (!currentUserId) return true; // If currentUserId not provided, show all (server should filter)
+    return user.id !== currentUserId;
+  });
+
   return (
     <div className="user-selector">
       <h3>Select User to Chat With</h3>
-      <div className="users-list">
-        {users.map((user) => (
-          <div
-            key={user.id}
-            className="user-item"
-            onClick={() => onSelectUser(user)}
-          >
-            <div className="user-info">
-              <span className="username">{user.username}</span>
-              {user.hasPublicKey && (
-                <span className="key-indicator" title="Has public key">🔑</span>
-              )}
-            </div>
-            <div className="user-email">{user.email}</div>
+      {filteredUsers.length === 0 ? (
+        <div className="no-users">
+          <p>No other users found. Register another account to test messaging!</p>
+          <button onClick={loadUsers} className="btn-refresh">Refresh List</button>
+        </div>
+      ) : (
+        <>
+          <div className="users-list">
+            {filteredUsers.map((user) => (
+              <div
+                key={user.id}
+                className="user-item"
+                onClick={() => onSelectUser(user)}
+              >
+                <div className="user-info">
+                  <span className="username">{user.username}</span>
+                  {user.hasPublicKey && (
+                    <span className="key-indicator" title="Has public key">🔑</span>
+                  )}
+                </div>
+                <div className="user-email">{user.email}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <button onClick={loadUsers} className="btn-refresh">Refresh List</button>
+          <button onClick={loadUsers} className="btn-refresh">Refresh List</button>
+        </>
+      )}
     </div>
   );
 };

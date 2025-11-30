@@ -2,6 +2,8 @@
 
 **Quick Guide to Test Your Real-Time Messaging Implementation**
 
+**📖 For complete testing guide, see:** [COMPLETE_TESTING_GUIDE.md](./COMPLETE_TESTING_GUIDE.md)
+
 ---
 
 ## 📋 PREREQUISITES

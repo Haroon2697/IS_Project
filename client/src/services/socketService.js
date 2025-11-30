@@ -52,10 +52,19 @@ class SocketService {
       this.authenticated = false;
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('❌ Socket disconnected');
+    this.socket.on('disconnect', (reason) => {
+      console.log('❌ Socket disconnected:', reason);
       this.connected = false;
       this.authenticated = false;
+      
+      // Auto-reconnect if it was an unexpected disconnect
+      if (reason === 'io server disconnect') {
+        // Server disconnected, don't reconnect automatically
+        console.log('Server disconnected the socket');
+      } else {
+        // Client disconnected or network issue, will auto-reconnect
+        console.log('Will attempt to reconnect...');
+      }
     });
 
     this.socket.on('connect_error', (error) => {
