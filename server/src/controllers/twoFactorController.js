@@ -3,6 +3,7 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { logSecurityEvent } = require('../utils/logger');
 const memoryStore = require('../storage/memoryStore');
+const { createHash } = require('../utils/sha256'); // Custom SHA-256 implementation
 
 // Check if MongoDB is connected (dynamic check)
 const useMongoDB = () => mongoose.connection.readyState === 1;
@@ -45,7 +46,7 @@ exports.setup2FA = async (req, res) => {
       Math.random().toString(36).substring(2, 10).toUpperCase()
     );
     const hashedBackupCodes = backupCodes.map(code => 
-      require('crypto').createHash('sha256').update(code).digest('hex')
+      createHash('sha256').update(code).digest('hex')
     );
 
     // Store secret temporarily (user needs to verify before enabling)
@@ -166,7 +167,7 @@ exports.verify2FA = async (req, res) => {
 
     // Check backup codes if TOTP fails
     if (!verified) {
-      const tokenHash = require('crypto').createHash('sha256').update(token).digest('hex');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
       const backupCodeIndex = user.twoFactorBackupCodes.indexOf(tokenHash);
 
       if (backupCodeIndex !== -1) {

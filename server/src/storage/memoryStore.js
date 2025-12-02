@@ -8,6 +8,7 @@ class MemoryStore {
     this.users = new Map();
     this.userIndex = new Map(); // Track user IDs separately
     this.messages = new Map();
+    this.files = new Map();
     this.logs = [];
   }
 
@@ -115,6 +116,43 @@ class MemoryStore {
       }
       return true;
     });
+  }
+
+  // File operations
+  async saveFile(fileData) {
+    const fileId = fileData.fileId || `file_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const file = {
+      _id: fileId,
+      fileId,
+      ...fileData,
+      uploadedAt: new Date(),
+      downloadedAt: null,
+    };
+    this.files.set(fileId, file);
+    return file;
+  }
+
+  async getFile(fileId) {
+    return this.files.get(fileId) || null;
+  }
+
+  async getFiles(query) {
+    const results = [];
+    for (const [id, file] of this.files.entries()) {
+      let match = true;
+      for (const [field, value] of Object.entries(query)) {
+        if (file[field] !== value) {
+          match = false;
+          break;
+        }
+      }
+      if (match) results.push(file);
+    }
+    return results;
+  }
+
+  async deleteFile(fileId) {
+    return this.files.delete(fileId);
   }
 }
 

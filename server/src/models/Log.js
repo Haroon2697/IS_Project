@@ -18,6 +18,9 @@ const logSchema = new mongoose.Schema({
       'MESSAGE_FAILED',
       'FILE_UPLOADED',
       'FILE_DOWNLOADED',
+      'FILE_DELETED',
+      'FILE_ACCESS_DENIED',
+      'FILE_DECRYPTION_FAILED',
     ],
   },
   userId: {
