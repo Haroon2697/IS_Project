@@ -30,5 +30,11 @@ export const keyExchangeAPI = {
     const response = await api.get(`/users/${userId}/publicKey`);
     return response.data;
   },
+
+  // Update user's public key (for key regeneration)
+  updatePublicKey: async (userId, publicKey) => {
+    const response = await api.put(`/users/${userId}/publicKey`, { publicKey });
+    return response.data;
+  },
 };
 

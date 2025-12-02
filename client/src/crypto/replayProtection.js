@@ -28,14 +28,19 @@ class ReplayProtection {
       throw new Error('Replay attack detected - nonce already seen');
     }
 
-    // Check in IndexedDB as well
+    // Check in IndexedDB as well (gracefully handle missing store)
     try {
       const stored = await retrieveData('nonces', nonce);
       if (stored) {
         throw new Error('Replay attack detected - nonce found in storage');
       }
     } catch (e) {
-      // Nonce not found is good
+      // Nonce not found is good, or store doesn't exist yet (first run)
+      if (!e.message.includes('Replay attack')) {
+        console.log('Nonce check skipped (store may not exist yet)');
+      } else {
+        throw e;
+      }
     }
 
     // Check sequence number (must be increasing)
@@ -48,14 +53,19 @@ class ReplayProtection {
     this.seenNonces.add(nonce);
     this.sequenceNumbers.set(userId, sequenceNumber);
 
-    // Store nonce in IndexedDB
-    await storeData('nonces', {
-      nonce,
-      timestamp,
-      sequenceNumber,
-      userId,
-      createdAt: new Date().toISOString(),
-    });
+    // Store nonce in IndexedDB (gracefully handle errors)
+    try {
+      await storeData('nonces', {
+        nonce,
+        timestamp,
+        sequenceNumber,
+        userId,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Failed to store nonce in IndexedDB:', e.message);
+      // Continue anyway - in-memory check is still active
+    }
 
     return true;
   }

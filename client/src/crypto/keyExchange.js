@@ -1,17 +1,13 @@
 /**
- * Key Exchange Protocol Implementation - VULNERABLE VERSION
+ * Key Exchange Protocol Implementation
  * ECDH-MA: Elliptic Curve Diffie-Hellman with Mutual Authentication
  * 
- * ⚠️ WARNING: This is a VULNERABLE version for MITM attack demonstration.
- * Signatures are DISABLED to show how MITM attacks work.
- * 
- * DO NOT USE THIS IN PRODUCTION!
+ * This is the SECURE version with digital signatures enabled.
  */
 
 import { generateECDHKeyPair, importECDHPublicKey, exportPublicKey, importPublicKey } from './keyManagement';
 import { deriveSessionKey } from './keyDerivation';
-// VULNERABLE: Signatures are imported but NOT USED
-// import { createSignature, verifySignature } from './signatures';
+import { createSignature, verifySignature } from './signatures';
 import { generateNonce } from './utils';
 
 /**
@@ -23,33 +19,38 @@ export async function generateEphemeralKeyPair() {
 
 /**
  * Derive shared secret using ECDH
+ * Returns raw key material that can be used with HKDF
  */
 export async function deriveSharedSecret(ownPrivateKey, peerPublicKey) {
   try {
-    const sharedSecret = await window.crypto.subtle.deriveKey(
+    // Use deriveBits to get raw shared secret bytes
+    const sharedSecretBits = await window.crypto.subtle.deriveBits(
       {
         name: 'ECDH',
         public: peerPublicKey,
       },
       ownPrivateKey,
-      {
-        name: 'AES-GCM',
-        length: 256,
-      },
+      256 // 256 bits = 32 bytes
+    );
+
+    // Import the raw bits as key material for HKDF
+    const sharedSecret = await window.crypto.subtle.importKey(
+      'raw',
+      sharedSecretBits,
+      { name: 'HKDF' },
       false, // not extractable
-      ['deriveKey']
+      ['deriveKey', 'deriveBits']
     );
 
     return sharedSecret;
   } catch (error) {
     console.error('ECDH derive error:', error);
-    throw new Error('Failed to derive shared secret');
+    throw new Error('Failed to derive shared secret: ' + error.message);
   }
 }
 
 /**
  * Create key exchange initialization message
- * VULNERABLE: No signature created
  */
 export async function createInitMessage(senderId, receiverId, longTermPrivateKey, longTermPublicKey) {
   try {
@@ -66,9 +67,7 @@ export async function createInitMessage(senderId, receiverId, longTermPrivateKey
     const longTermPublicKeyJwk = await exportPublicKey(longTermPublicKey);
     const ephemeralPublicKeyJwk = await exportPublicKey(ephemeralKeyPair.publicKey);
     
-    // VULNERABLE: Signature creation is COMMENTED OUT
-    // This allows MITM attacker to modify the message without detection
-    /*
+    // Create message data for signing
     const messageData = {
       senderId,
       receiverId,
@@ -78,9 +77,9 @@ export async function createInitMessage(senderId, receiverId, longTermPrivateKey
       timestamp,
     };
     
+    // Create signature
     const dataToSign = JSON.stringify(messageData);
     const signature = await createSignature(longTermPrivateKey, dataToSign);
-    */
     
     return {
       type: 'KEY_EXCHANGE_INIT',
@@ -90,9 +89,8 @@ export async function createInitMessage(senderId, receiverId, longTermPrivateKey
       senderECDHPublic: ephemeralPublicKeyJwk,
       nonce,
       timestamp,
-      // VULNERABLE: No signature field - attacker can modify message
-      signature: null, // Placeholder, but not verified
-      // Store ephemeral private key temporarily
+      signature,
+      // Store ephemeral private key temporarily (will be deleted after key derivation)
       _ephemeralPrivateKey: ephemeralKeyPair.privateKey,
     };
   } catch (error) {
@@ -103,7 +101,6 @@ export async function createInitMessage(senderId, receiverId, longTermPrivateKey
 
 /**
  * Verify and process key exchange init message
- * VULNERABLE: Signature verification is DISABLED
  */
 export async function processInitMessage(message, receiverId, longTermPrivateKey, longTermPublicKey) {
   try {
@@ -115,9 +112,7 @@ export async function processInitMessage(message, receiverId, longTermPrivateKey
       throw new Error('Message timestamp expired');
     }
     
-    // VULNERABLE: Signature verification is COMMENTED OUT
-    // This allows MITM attacker to modify the message without detection
-    /*
+    // Verify signature
     const messageData = {
       senderId: message.senderId,
       receiverId: message.receiverId,
@@ -134,9 +129,8 @@ export async function processInitMessage(message, receiverId, longTermPrivateKey
     if (!isValid) {
       throw new Error('Invalid signature in init message');
     }
-    */
     
-    console.warn('⚠️ VULNERABLE MODE: Signature verification DISABLED');
+    console.log('✅ Signature verified for init message');
     
     // Store nonce to prevent replay
     await storeNonce(message.nonce, message.timestamp);
@@ -155,7 +149,6 @@ export async function processInitMessage(message, receiverId, longTermPrivateKey
 
 /**
  * Create key exchange response message
- * VULNERABLE: No signature created
  */
 export async function createResponseMessage(
   initMessage,
@@ -177,8 +170,7 @@ export async function createResponseMessage(
     const longTermPublicKeyJwk = await exportPublicKey(longTermPublicKey);
     const ephemeralPublicKeyJwk = await exportPublicKey(ephemeralKeyPair.publicKey);
     
-    // VULNERABLE: Signature creation is COMMENTED OUT
-    /*
+    // Create message data for signing
     const messageData = {
       senderId: receiverId,
       receiverId: initMessage.senderId,
@@ -189,9 +181,9 @@ export async function createResponseMessage(
       timestamp,
     };
     
+    // Create signature
     const dataToSign = JSON.stringify(messageData);
     const signature = await createSignature(longTermPrivateKey, dataToSign);
-    */
     
     return {
       type: 'KEY_EXCHANGE_RESPONSE',
@@ -202,8 +194,7 @@ export async function createResponseMessage(
       nonceAlice: initMessage.nonce,
       nonceBob: nonce,
       timestamp,
-      // VULNERABLE: No signature field
-      signature: null,
+      signature,
       // Store ephemeral private key temporarily
       _ephemeralPrivateKey: ephemeralKeyPair.privateKey,
       _senderEphemeralPublicKey: initMessage.senderECDHPublic,
@@ -216,7 +207,6 @@ export async function createResponseMessage(
 
 /**
  * Process response message and derive session key
- * VULNERABLE: Signature verification is DISABLED
  */
 export async function processResponseMessage(
   responseMessage,
@@ -238,8 +228,7 @@ export async function processResponseMessage(
       throw new Error('Nonce mismatch in response');
     }
     
-    // VULNERABLE: Signature verification is COMMENTED OUT
-    /*
+    // Verify signature
     const messageData = {
       senderId: responseMessage.senderId,
       receiverId: responseMessage.receiverId,
@@ -257,9 +246,8 @@ export async function processResponseMessage(
     if (!isValid) {
       throw new Error('Invalid signature in response message');
     }
-    */
     
-    console.warn('⚠️ VULNERABLE MODE: Signature verification DISABLED');
+    console.log('✅ Signature verified for response message');
     
     // Store nonce to prevent replay
     await storeNonce(responseMessage.nonceBob, responseMessage.timestamp);
@@ -292,6 +280,42 @@ export async function processResponseMessage(
   } catch (error) {
     console.error('Process response message error:', error);
     throw error;
+  }
+}
+
+/**
+ * Derive session key as responder (Bob)
+ * Called after creating response message to derive the shared session key
+ */
+export async function deriveSessionKeyAsResponder(
+  responseMessage,
+  initMessage
+) {
+  try {
+    // Import initiator's ephemeral public key
+    const initiatorEphemeralPublicKey = await importECDHPublicKey(initMessage.senderECDHPublic);
+    
+    // Derive shared secret using our ephemeral private key and initiator's ephemeral public key
+    const sharedSecret = await deriveSharedSecret(
+      responseMessage._ephemeralPrivateKey,
+      initiatorEphemeralPublicKey
+    );
+    
+    // Derive session key using HKDF with same parameters as initiator
+    const combinedNonces = initMessage.nonce + responseMessage.nonceBob;
+    const sessionKey = await deriveSessionKey(
+      sharedSecret,
+      combinedNonces,
+      initMessage.senderId,
+      responseMessage.senderId
+    );
+    
+    console.log('✅ Session key derived as responder');
+    
+    return sessionKey;
+  } catch (error) {
+    console.error('Derive session key as responder error:', error);
+    throw new Error('Failed to derive session key as responder: ' + error.message);
   }
 }
 

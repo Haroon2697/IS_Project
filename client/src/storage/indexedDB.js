@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'SecureMessagingDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented to trigger upgrade
 
 /**
  * Initialize database and create object stores
@@ -25,16 +25,24 @@ export async function initDatabase() {
         keysStore.createIndex('userId', 'userId', { unique: true });
       }
 
-      // Session keys store (temporary, in-memory)
+      // Session keys store
       if (!db.objectStoreNames.contains('sessions')) {
         const sessionsStore = db.createObjectStore('sessions', { keyPath: 'sessionId' });
-        sessionsStore.createIndex('userId', 'userId', { unique: false });
+        sessionsStore.createIndex('recipientId', 'recipientId', { unique: false });
       }
 
       // Nonces store (for replay protection)
       if (!db.objectStoreNames.contains('nonces')) {
         const noncesStore = db.createObjectStore('nonces', { keyPath: 'nonce' });
         noncesStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+
+      // Messages store (for message history - encrypted)
+      if (!db.objectStoreNames.contains('messages')) {
+        const messagesStore = db.createObjectStore('messages', { keyPath: 'messageId', autoIncrement: true });
+        messagesStore.createIndex('recipientId', 'recipientId', { unique: false });
+        messagesStore.createIndex('senderId', 'senderId', { unique: false });
+        messagesStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
     };
   });

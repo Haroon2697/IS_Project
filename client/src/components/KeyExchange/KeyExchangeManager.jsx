@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createInitMessage, processInitMessage, createResponseMessage, processResponseMessage, createConfirmationMessage, verifyConfirmationMessage, createAcknowledgmentMessage } from '../../crypto/keyExchange';
-import { retrievePrivateKey, importPublicKey } from '../../crypto/keyManagement';
+import { createInitMessage, processInitMessage, createResponseMessage, processResponseMessage, createConfirmationMessage, verifyConfirmationMessage, createAcknowledgmentMessage, deriveSessionKeyAsResponder } from '../../crypto/keyExchange';
+import { retrievePrivateKey, importPublicKey, generateAndStoreKeys, hasKeys } from '../../crypto/keyManagement';
 import { keyExchangeAPI } from '../../api/keyExchange';
 import socketService from '../../services/socketService';
 import './KeyExchange.css';
@@ -13,8 +13,11 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
   const [longTermPublicKey, setLongTermPublicKey] = useState(null);
   // Use useRef to persist ephemeral keys across re-renders
   const ephemeralPrivateKeysRef = React.useRef(new Map());
+  // Use ref to store session key for confirmation handling (CryptoKey can't be serialized)
+  const sessionKeyRef = React.useRef(null);
   const [keysLoading, setKeysLoading] = useState(false);
   const [keysLoaded, setKeysLoaded] = useState(false);
+  const [showRegenerateOption, setShowRegenerateOption] = useState(false);
 
   // Load keys function (called on button click to avoid React concurrent rendering issues)
   const loadKeys = async () => {
@@ -34,10 +37,20 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
         return;
       }
 
+      // Check if keys exist for this user
+      const { hasKeys } = await import('../../crypto/keyManagement');
+      const userHasKeys = await hasKeys(user.username);
+      
+      if (!userHasKeys) {
+        setKeysLoading(false);
+        setError(`No keys found for "${user.username}". This can happen if you registered on a different browser or cleared browser data. Please register again with a new account.`);
+        return;
+      }
+
       // Use setTimeout to avoid React concurrent rendering issues with prompt()
       const password = await new Promise((resolve) => {
         setTimeout(() => {
-          resolve(prompt('Enter your password to load keys:'));
+          resolve(prompt('Enter your password to load keys (same password you used during registration):'));
         }, 100);
       });
       
@@ -47,7 +60,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
         return;
       }
       
-      console.log('🔑 Loading keys...');
+      console.log('🔑 Loading keys for user:', user.username);
       const privateKey = await retrievePrivateKey(user.username, password);
       setLongTermPrivateKey(privateKey);
       console.log('✅ Private key loaded');
@@ -64,7 +77,70 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       setKeysLoaded(true);
     } catch (err) {
       console.error('❌ Failed to load keys:', err);
-      setError('Failed to load keys: ' + err.message);
+      if (err.message.includes('Wrong password') || err.message.includes('decrypt')) {
+        setError('Wrong password or corrupted keys. Click "Regenerate Keys" to create new keys.');
+        setShowRegenerateOption(true);
+      } else {
+        setError('Failed to load keys: ' + err.message);
+      }
+    } finally {
+      setKeysLoading(false);
+    }
+  };
+
+  // Regenerate keys for user (when keys are lost or password forgotten)
+  const regenerateKeys = async () => {
+    setKeysLoading(true);
+    setError('');
+    
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      if (!user) {
+        setError('User not found. Please log in again.');
+        return;
+      }
+
+      const password = await new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(prompt('Enter a NEW password to encrypt your new keys.\nThis will replace any existing keys:'));
+        }, 100);
+      });
+      
+      if (!password) {
+        setError('Password required');
+        return;
+      }
+
+      if (password.length < 8) {
+        setError('Password must be at least 8 characters');
+        return;
+      }
+
+      console.log('🔑 Regenerating keys for user:', user.username);
+      
+      // Generate new keys
+      const keyData = await generateAndStoreKeys(user.username, password);
+      console.log('✅ New keys generated');
+      
+      // Update public key on server
+      await keyExchangeAPI.updatePublicKey(user.id, JSON.stringify(keyData.publicKey));
+      console.log('✅ Public key updated on server');
+      
+      // Now load the keys
+      const privateKey = await retrievePrivateKey(user.username, password);
+      setLongTermPrivateKey(privateKey);
+      
+      const publicKey = await importPublicKey(keyData.publicKey);
+      setLongTermPublicKey(publicKey);
+      
+      setKeysLoaded(true);
+      setShowRegenerateOption(false);
+      setError('');
+      console.log('✅ Keys regenerated and loaded successfully!');
+      alert('Keys regenerated successfully! You can now establish secure connections.');
+    } catch (err) {
+      console.error('❌ Failed to regenerate keys:', err);
+      setError('Failed to regenerate keys: ' + err.message);
     } finally {
       setKeysLoading(false);
     }
@@ -253,21 +329,42 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
         longTermPublicKey
       );
       
-      // Store response data for later confirmation
+      // Derive session key as responder (Bob)
+      const derivedSessionKey = await deriveSessionKeyAsResponder(responseMessage, initMessage);
+      console.log('✅ Session key derived as responder');
+      
+      // Store session key in state
+      setSessionKey(derivedSessionKey);
+      
+      // Store response data for later confirmation (without private key)
       localStorage.setItem('keyExchange_response', JSON.stringify({
-        message: responseMessage,
+        message: {
+          ...responseMessage,
+          _ephemeralPrivateKey: undefined, // Can't serialize CryptoKey
+        },
+        initMessage: {
+          ...initMessage,
+        },
         senderId: initMessage.senderId,
         timestamp: Date.now(),
       }));
+      
+      // Store a reference to the session key for confirmation handling
+      // We'll use a ref since CryptoKey can't be serialized
+      sessionKeyRef.current = derivedSessionKey;
       
       // Send via Socket.io and HTTP
       socketService.sendKeyExchangeMessage({
         ...responseMessage,
         type: 'response',
         receiverId: initMessage.senderId,
+        _ephemeralPrivateKey: undefined, // Don't send private key
       });
       
-      await keyExchangeAPI.sendResponse(responseMessage);
+      await keyExchangeAPI.sendResponse({
+        ...responseMessage,
+        _ephemeralPrivateKey: undefined,
+      });
       
       setStatus('responded');
     } catch (err) {
@@ -288,40 +385,47 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
 
       const { message: responseMessage, senderId } = JSON.parse(storedResponse);
       
-      // We need to derive the session key from the response
-      // This is complex - for now, we'll need to store it during response processing
-      // For simplicity, let's check if we have a session key stored
-      const storedSessionKey = localStorage.getItem('keyExchange_sessionKey');
+      // Get session key from ref (stored during handleInitMessage)
+      const storedSessionKey = sessionKeyRef.current || sessionKey;
       
-      if (storedSessionKey) {
-        // Verify confirmation
-        const verified = await verifyConfirmationMessage(
-          confirmMessage,
-          storedSessionKey, // This should be the actual CryptoKey
-          responseMessage.nonceBob
+      if (!storedSessionKey) {
+        console.error('No session key found for confirmation');
+        setError('Session key not found. Please restart key exchange.');
+        return;
+      }
+      
+      // Verify confirmation
+      const verified = await verifyConfirmationMessage(
+        confirmMessage,
+        storedSessionKey,
+        responseMessage.nonceBob
+      );
+      
+      if (verified) {
+        console.log('✅ Key confirmation verified!');
+        setSessionKey(storedSessionKey);
+        setStatus('established');
+        onKeyExchangeComplete(storedSessionKey);
+        
+        // Send acknowledgment
+        const ackMessage = await createAcknowledgmentMessage(
+          storedSessionKey,
+          responseMessage.nonceBob,
+          currentUserId,
+          senderId
         );
         
-        if (verified) {
-          setSessionKey(storedSessionKey);
-          setStatus('established');
-          onKeyExchangeComplete(storedSessionKey);
-          
-          // Send acknowledgment
-          const ackMessage = await createAcknowledgmentMessage(
-            storedSessionKey,
-            responseMessage.nonceBob,
-            currentUserId,
-            senderId
-          );
-          
-          socketService.sendKeyExchangeMessage({
-            ...ackMessage,
-            type: 'acknowledge',
-            receiverId: senderId,
-          });
-          
-          await keyExchangeAPI.sendAck(ackMessage);
-        }
+        socketService.sendKeyExchangeMessage({
+          ...ackMessage,
+          type: 'acknowledge',
+          receiverId: senderId,
+        });
+        
+        await keyExchangeAPI.sendAck(ackMessage);
+        console.log('✅ Key exchange completed (responder side)!');
+      } else {
+        console.error('❌ Key confirmation verification failed');
+        setError('Key confirmation failed. Please restart key exchange.');
       }
     } catch (err) {
       console.error('Error handling confirm message:', err);
@@ -412,6 +516,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
     setStatus('idle');
     setError('');
     setSessionKey(null);
+    sessionKeyRef.current = null;
     localStorage.removeItem('keyExchange_init');
     localStorage.removeItem('keyExchange_response');
     ephemeralPrivateKeysRef.current.clear();
@@ -441,9 +546,16 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       {status === 'idle' && (
         <>
           {!keysLoaded && !keysLoading && (
-            <button onClick={loadKeys} className="btn-primary" disabled={keysLoading}>
-              {keysLoading ? 'Loading Keys...' : 'Load Keys'}
-            </button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={loadKeys} className="btn-primary" disabled={keysLoading}>
+                {keysLoading ? 'Loading Keys...' : 'Load Keys'}
+              </button>
+              {showRegenerateOption && (
+                <button onClick={regenerateKeys} className="btn-secondary" disabled={keysLoading} style={{ background: '#ff9800', color: 'white' }}>
+                  🔄 Regenerate Keys
+                </button>
+              )}
+            </div>
           )}
           {keysLoaded && (
             <button 

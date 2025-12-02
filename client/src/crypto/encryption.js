@@ -117,10 +117,12 @@ export async function encryptMessageWithMetadata(sessionKey, plaintext, sequence
 
 /**
  * Decrypt message with metadata verification
+ * NOTE: Replay protection (nonce checking) is handled by replayProtection.js in messaging.js
+ * This function only handles decryption and basic timestamp validation
  */
 export async function decryptMessageWithMetadata(sessionKey, encryptedData) {
   try {
-    // Verify timestamp (within 5 minutes)
+    // Verify timestamp (within 5 minutes) - basic sanity check
     const now = Date.now();
     const messageTime = encryptedData.timestamp;
     const timeDiff = Math.abs(now - messageTime);
@@ -128,19 +130,8 @@ export async function decryptMessageWithMetadata(sessionKey, encryptedData) {
       throw new Error('Message timestamp expired');
     }
     
-    // Check for replay attack
-    const { isNonceSeen } = await import('./keyExchange');
-    if (await isNonceSeen(encryptedData.nonce)) {
-      throw new Error('Replay attack detected - nonce already seen');
-    }
-    
-    // Store nonce
-    const { storeData } = await import('../storage/indexedDB');
-    await storeData('nonces', {
-      nonce: encryptedData.nonce,
-      timestamp: encryptedData.timestamp,
-      createdAt: new Date().toISOString(),
-    });
+    // NOTE: Nonce/replay checking is done in messaging.js via replayProtection
+    // Don't duplicate the check here to avoid "already seen" errors
     
     // Decrypt message
     const plaintext = await decryptMessage(
