@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:3001'],
   credentials: true
 }));
 
@@ -47,6 +47,7 @@ const oauthRoutes = require('./src/routes/oauth');
 const twoFactorRoutes = require('./src/routes/twoFactor');
 const keyExchangeRoutes = require('./src/routes/keyExchange');
 const userRoutes = require('./src/routes/users');
+const fileRoutes = require('./src/routes/files');
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -57,12 +58,23 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Development endpoint to clear rate limits (remove in production)
+if (process.env.NODE_ENV === 'development') {
+  app.post('/api/dev/clear-rate-limits', (req, res) => {
+    const { clearRateLimits } = require('./src/middleware/rateLimiter');
+    clearRateLimits();
+    res.json({ message: 'Rate limits cleared' });
+  });
+}
+
 // API Routes
-app.use('/api/auth', rateLimiter(15 * 60 * 1000, 5), authRoutes); // 5 requests per 15 minutes
+// Rate limiter: 15 minutes window, 50 requests (more lenient for development)
+app.use('/api/auth', rateLimiter(15 * 60 * 1000, 50), authRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/2fa', twoFactorRoutes);
 app.use('/api/keyexchange', keyExchangeRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/files', fileRoutes);
 
 // MongoDB connection (optional - will use in-memory storage if not connected)
 if (process.env.MONGODB_URI) {
@@ -105,7 +117,7 @@ app.use((req, res) => {
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:3001'],
     methods: ['GET', 'POST'],
     credentials: true
   }

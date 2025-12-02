@@ -3,6 +3,12 @@
 
 const rateLimitMap = new Map();
 
+// Export function to clear rate limits (useful for development)
+const clearRateLimits = () => {
+  rateLimitMap.clear();
+  console.log('✅ Rate limit map cleared');
+};
+
 const rateLimiter = (windowMs = 15 * 60 * 1000, maxRequests = 5) => {
   return (req, res, next) => {
     const key = req.ip || req.connection.remoteAddress;
@@ -46,4 +52,5 @@ setInterval(() => {
 }, 60 * 1000); // Clean up every minute
 
 module.exports = rateLimiter;
+module.exports.clearRateLimits = clearRateLimits;
 

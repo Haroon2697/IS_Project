@@ -140,3 +140,41 @@
   cursor: not-allowed;
 }
 
+/* File Sharing Styles */
+.file-sharing-section {
+  padding: 15px;
+  background: white;
+  border-top: 1px solid #ddd;
+}
+
+.toggle-files-btn {
+  width: 100%;
+  padding: 10px;
+  background: #f8f9fa;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+.toggle-files-btn:hover {
+  background: #e9ecef;
+}
+
+.files-panel {
+  margin-top: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.error-message {
+  padding: 10px;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  color: #721c24;
+  margin: 10px 15px;
+}
+

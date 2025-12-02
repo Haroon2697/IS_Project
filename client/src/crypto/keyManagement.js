@@ -57,13 +57,15 @@ async function generateKeyPair() {
  */
 async function generateECDHKeyPair() {
   try {
+    // Generate with both usages - this is what deriveSharedSecret expects
+    // This ensures compatibility throughout the key exchange process
     const keyPair = await window.crypto.subtle.generateKey(
       {
         name: 'ECDH',
         namedCurve: 'P-256',
       },
       true, // extractable
-      ['deriveKey', 'deriveBits']
+      ['deriveKey', 'deriveBits'] // Both usages for full compatibility
     );
 
     return keyPair;
@@ -88,7 +90,22 @@ async function exportPublicKey(publicKey) {
     }
     
     const exported = await window.crypto.subtle.exportKey('jwk', publicKey);
-    return exported;
+    
+    // Create a completely minimal JWK with ONLY required fields
+    // Remove ALL optional properties (key_ops, ext, use, alg, etc.)
+    // This ensures maximum compatibility when importing
+    const minimalJwk = Object.create(null);
+    minimalJwk.kty = exported.kty;
+    minimalJwk.crv = exported.crv;
+    minimalJwk.x = exported.x;
+    minimalJwk.y = exported.y;
+    
+    // Only include 'd' if it's a private key (shouldn't happen for public keys, but safety check)
+    if (exported.d) {
+      minimalJwk.d = exported.d;
+    }
+    
+    return minimalJwk;
   } catch (error) {
     console.error('Public key export error:', error);
     console.error('Public key type:', typeof publicKey);
@@ -102,15 +119,23 @@ async function exportPublicKey(publicKey) {
  */
 async function importPublicKey(jwk) {
   try {
+    // Create a minimal JWK with only required fields
+    const cleanJwk = {
+      kty: jwk.kty,
+      crv: jwk.crv,
+      x: jwk.x,
+      y: jwk.y,
+    };
+    
     const publicKey = await window.crypto.subtle.importKey(
       'jwk',
-      jwk,
+      cleanJwk,
       {
         name: 'ECDSA',
         namedCurve: 'P-256',
       },
-      true,
-      ['verify']
+      true, // extractable
+      ['verify'] // key usages
     );
     return publicKey;
   } catch (error) {
@@ -124,20 +149,88 @@ async function importPublicKey(jwk) {
  */
 async function importECDHPublicKey(jwk) {
   try {
-    const publicKey = await window.crypto.subtle.importKey(
-      'jwk',
-      jwk,
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      true,
-      ['deriveKey', 'deriveBits']
-    );
-    return publicKey;
+    // Validate input
+    if (!jwk) {
+      throw new Error('ECDH public key JWK is null or undefined');
+    }
+    
+    if (typeof jwk !== 'object') {
+      throw new Error('ECDH public key must be a JWK object');
+    }
+    
+    // Validate required JWK fields
+    if (!jwk.kty || jwk.kty !== 'EC') {
+      throw new Error('Invalid JWK: kty must be "EC"');
+    }
+    
+    if (!jwk.crv || jwk.crv !== 'P-256') {
+      throw new Error('Invalid JWK: crv must be "P-256"');
+    }
+    
+    if (!jwk.x || !jwk.y) {
+      throw new Error('Invalid JWK: missing x or y coordinates');
+    }
+    
+    // Create a completely fresh JWK with ONLY the 4 required fields
+    // Use Object.create(null) to avoid any prototype pollution
+    const cleanJwk = Object.create(null);
+    cleanJwk.kty = String(jwk.kty);
+    cleanJwk.crv = String(jwk.crv);
+    cleanJwk.x = String(jwk.x);
+    cleanJwk.y = String(jwk.y);
+    
+    // Ensure all values are strings (JWK spec requirement)
+    if (!cleanJwk.kty || !cleanJwk.crv || !cleanJwk.x || !cleanJwk.y) {
+      throw new Error('Invalid JWK: missing required fields');
+    }
+    
+    console.log('Importing ECDH public key:', { kty: cleanJwk.kty, crv: cleanJwk.crv, hasX: !!cleanJwk.x, hasY: !!cleanJwk.y });
+    console.log('Clean JWK keys:', Object.keys(cleanJwk));
+    console.log('Clean JWK:', cleanJwk);
+    
+    // Try different combinations of extractable and usages
+    // Web Crypto API can be strict about key usage compatibility
+    
+    // Import with both usages to match key generation and deriveSharedSecret expectations
+    // Keys are generated with ['deriveKey', 'deriveBits'], so import must match
+    const importAttempts = [
+      { extractable: false, usages: ['deriveKey', 'deriveBits'] },
+      { extractable: true, usages: ['deriveKey', 'deriveBits'] },
+      // Fallback: try with just deriveKey if both fails
+      { extractable: false, usages: ['deriveKey'] },
+      { extractable: true, usages: ['deriveKey'] },
+    ];
+    
+    for (let i = 0; i < importAttempts.length; i++) {
+      const attempt = importAttempts[i];
+      try {
+        console.log(`Attempt ${i + 1}: extractable=${attempt.extractable}, usages=${attempt.usages.join(',')}`);
+        const publicKey = await window.crypto.subtle.importKey(
+          'jwk',
+          cleanJwk,
+          {
+            name: 'ECDH',
+            namedCurve: 'P-256',
+          },
+          attempt.extractable,
+          attempt.usages
+        );
+        console.log(`✅ ECDH key imported successfully (attempt ${i + 1})`);
+        return publicKey;
+      } catch (attemptError) {
+        console.warn(`Attempt ${i + 1} failed:`, attemptError.message);
+        if (i === importAttempts.length - 1) {
+          // Last attempt failed
+          console.error('All import attempts failed');
+          console.error('Final error:', attemptError);
+          throw new Error('Failed to import ECDH public key: ' + attemptError.message);
+        }
+      }
+    }
   } catch (error) {
     console.error('ECDH public key import error:', error);
-    throw new Error('Failed to import ECDH public key');
+    console.error('JWK received:', jwk);
+    throw new Error('Failed to import ECDH public key: ' + error.message);
   }
 }
 

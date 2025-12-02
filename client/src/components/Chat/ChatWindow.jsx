@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import messagingService from '../../services/messaging';
 import socketService from '../../services/socketService';
+import FileUpload from '../Files/FileUpload';
+import FileList from '../Files/FileList';
 import './Chat.css';
 
 // Import socketService at module level for status check
@@ -10,7 +12,12 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
   const [inputMessage, setInputMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [showFiles, setShowFiles] = useState(false);
+  const [fileListKey, setFileListKey] = useState(0); // Force re-render
   const messagesEndRef = useRef(null);
+  
+  const user = JSON.parse(localStorage.getItem('user'));
+  const currentUserId = user?.id;
 
   useEffect(() => {
     // Connect to Socket.io on mount
@@ -163,6 +170,37 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
       </div>
 
       {error && <div className="error-message">{error}</div>}
+
+      {/* File Sharing Section */}
+      <div className="file-sharing-section">
+        <button
+          type="button"
+          onClick={() => setShowFiles(!showFiles)}
+          className="toggle-files-btn"
+        >
+          {showFiles ? '▼' : '▶'} Files
+        </button>
+        
+        {showFiles && (
+          <div className="files-panel">
+            <FileUpload
+              recipientId={recipientId}
+              sessionKey={sessionKey}
+              onUploadComplete={(fileId) => {
+                console.log('File uploaded:', fileId);
+                // Refresh file list
+                setFileListKey(prev => prev + 1);
+              }}
+            />
+            <FileList
+              key={fileListKey}
+              recipientId={recipientId}
+              sessionKey={sessionKey}
+              currentUserId={currentUserId}
+            />
+          </div>
+        )}
+      </div>
 
       <form onSubmit={handleSend} className="message-input-form">
         <input

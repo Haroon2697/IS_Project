@@ -88,10 +88,10 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
         if (message.type === 'response' || message.messageType === 'response') {
           // This is a response to our init
           await handleResponseMessage(message);
-        } else if (message.type === 'init' || message.messageType === 'init') {
+        } else if (message.type === 'init' || message.messageType === 'init' || message.type === 'KEY_EXCHANGE_INIT') {
           // This is an init from someone else - we should respond
           // Check if keys are loaded first
-          if (!longTermPrivateKey || !longTermPublicKey) {
+          if (!longTermPrivateKey || ! longTermPublicKey) {
             console.log('⏳ Keys not loaded yet, waiting 2 seconds...');
             setTimeout(async () => {
               if (longTermPrivateKey && longTermPublicKey) {
@@ -224,7 +224,16 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
     try {
       // Only respond if this is for us
       if (initMessage.receiverId !== currentUserId) {
+        console.log('Init message not for us, ignoring. receiverId:', initMessage.receiverId, 'currentUserId:', currentUserId);
         return;
+      }
+
+      // If we're already in "initiated" state, we both initiated - cancel ours and respond to theirs
+      if (status === 'initiated') {
+        console.log('⚠️ Both users initiated! Cancelling our init and responding to theirs.');
+        // Clear our init state
+        localStorage.removeItem('keyExchange_init');
+        ephemeralPrivateKeysRef.current.delete(recipientId);
       }
 
       // Check if keys are loaded
@@ -332,6 +341,12 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
 
   // Initiate key exchange
   const handleInitiate = async () => {
+    // Prevent connecting to yourself
+    if (currentUserId === recipientId) {
+      setError('❌ Cannot establish connection with yourself! Please select a different user.');
+      return;
+    }
+
     if (!longTermPrivateKey || !longTermPublicKey) {
       setError('Keys not loaded. Please refresh the page.');
       return;
@@ -392,9 +407,29 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
     }
   };
 
+  // Reset function to clear stuck state
+  const handleReset = () => {
+    setStatus('idle');
+    setError('');
+    setSessionKey(null);
+    localStorage.removeItem('keyExchange_init');
+    localStorage.removeItem('keyExchange_response');
+    ephemeralPrivateKeysRef.current.clear();
+    console.log('🔄 Key exchange state reset');
+  };
+
+  // Check if user is trying to connect to themselves
+  const isSelfConnection = currentUserId === recipientId;
+
   return (
     <div className="key-exchange-manager">
       <h3>Key Exchange with {recipientUsername}</h3>
+      
+      {isSelfConnection && (
+        <div className="error-message" style={{ background: '#ffebee', color: '#c62828', padding: '10px', borderRadius: '4px', marginBottom: '10px' }}>
+          ⚠️ <strong>Error:</strong> You cannot establish a connection with yourself! Please click "Change User" and select a different user.
+        </div>
+      )}
       
       {error && <div className="error-message">{error}</div>}
       
@@ -411,7 +446,12 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
             </button>
           )}
           {keysLoaded && (
-            <button onClick={handleInitiate} className="btn-primary">
+            <button 
+              onClick={handleInitiate} 
+              className="btn-primary"
+              disabled={isSelfConnection}
+              title={isSelfConnection ? 'Cannot connect to yourself' : ''}
+            >
               Establish Secure Connection
             </button>
           )}
@@ -421,6 +461,9 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       {status === 'initiated' && (
         <div className="waiting">
           Waiting for response from {recipientUsername}...
+          <button onClick={handleReset} className="btn-secondary" style={{ marginLeft: '10px', padding: '5px 10px', fontSize: '12px' }}>
+            Reset
+          </button>
         </div>
       )}
       
