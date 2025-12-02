@@ -62,6 +62,50 @@ router.get('/list', verifyToken, async (req, res) => {
 });
 
 /**
+ * Update user's public key (for key regeneration)
+ */
+router.put('/:userId/publicKey', verifyToken, async (req, res) => {
+  try {
+    const { publicKey } = req.body;
+    
+    // Verify user is updating their own key
+    if (req.params.userId !== req.userId) {
+      return res.status(403).json({ error: 'Cannot update another user\'s public key' });
+    }
+    
+    if (!publicKey) {
+      return res.status(400).json({ error: 'Public key is required' });
+    }
+    
+    let user;
+    if (useMongoDB() && User) {
+      user = await User.findByIdAndUpdate(
+        req.params.userId,
+        { publicKey },
+        { new: true }
+      ).select('publicKey username');
+    } else {
+      user = await memoryStore.updateUser(req.params.userId, { publicKey });
+    }
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log(`🔑 Public key updated for user ${user.username}`);
+    
+    res.json({
+      message: 'Public key updated successfully',
+      userId: user._id,
+      username: user.username,
+    });
+  } catch (error) {
+    console.error('Update public key error:', error);
+    res.status(500).json({ error: 'Failed to update public key' });
+  }
+});
+
+/**
  * Get user's public key
  */
 router.get('/:userId/publicKey', verifyToken, async (req, res) => {

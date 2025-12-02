@@ -4,29 +4,15 @@
  * Uses Web Crypto API for all cryptographic operations
  */
 
-// IndexedDB database name and version
-const DB_NAME = 'SecureMessagingDB';
-const DB_VERSION = 1;
+import { initDatabase } from '../storage/indexedDB';
+
 const STORE_NAME = 'keys';
 
 /**
- * Initialize IndexedDB database
+ * Initialize IndexedDB database (uses shared initialization)
  */
 async function initDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const objectStore = db.createObjectStore(STORE_NAME, { keyPath: 'userId' });
-        objectStore.createIndex('userId', 'userId', { unique: true });
-      }
-    };
-  });
+  return await initDatabase();
 }
 
 /**
@@ -146,6 +132,7 @@ async function importPublicKey(jwk) {
 
 /**
  * Import ECDH public key from JWK format
+ * NOTE: ECDH public keys must have EMPTY usages array - only private keys can have deriveKey/deriveBits
  */
 async function importECDHPublicKey(jwk) {
   try {
@@ -171,62 +158,31 @@ async function importECDHPublicKey(jwk) {
       throw new Error('Invalid JWK: missing x or y coordinates');
     }
     
-    // Create a completely fresh JWK with ONLY the 4 required fields
-    // Use Object.create(null) to avoid any prototype pollution
-    const cleanJwk = Object.create(null);
-    cleanJwk.kty = String(jwk.kty);
-    cleanJwk.crv = String(jwk.crv);
-    cleanJwk.x = String(jwk.x);
-    cleanJwk.y = String(jwk.y);
+    // Create a clean JWK with only required fields
+    const cleanJwk = {
+      kty: String(jwk.kty),
+      crv: String(jwk.crv),
+      x: String(jwk.x),
+      y: String(jwk.y),
+    };
     
-    // Ensure all values are strings (JWK spec requirement)
-    if (!cleanJwk.kty || !cleanJwk.crv || !cleanJwk.x || !cleanJwk.y) {
-      throw new Error('Invalid JWK: missing required fields');
-    }
+    console.log('Importing ECDH public key:', { kty: cleanJwk.kty, crv: cleanJwk.crv });
     
-    console.log('Importing ECDH public key:', { kty: cleanJwk.kty, crv: cleanJwk.crv, hasX: !!cleanJwk.x, hasY: !!cleanJwk.y });
-    console.log('Clean JWK keys:', Object.keys(cleanJwk));
-    console.log('Clean JWK:', cleanJwk);
+    // IMPORTANT: ECDH public keys must have EMPTY usages array
+    // Only private keys can have deriveKey/deriveBits usages
+    const publicKey = await window.crypto.subtle.importKey(
+      'jwk',
+      cleanJwk,
+      {
+        name: 'ECDH',
+        namedCurve: 'P-256',
+      },
+      true, // extractable
+      []    // EMPTY usages for public key - this is required!
+    );
     
-    // Try different combinations of extractable and usages
-    // Web Crypto API can be strict about key usage compatibility
-    
-    // Import with both usages to match key generation and deriveSharedSecret expectations
-    // Keys are generated with ['deriveKey', 'deriveBits'], so import must match
-    const importAttempts = [
-      { extractable: false, usages: ['deriveKey', 'deriveBits'] },
-      { extractable: true, usages: ['deriveKey', 'deriveBits'] },
-      // Fallback: try with just deriveKey if both fails
-      { extractable: false, usages: ['deriveKey'] },
-      { extractable: true, usages: ['deriveKey'] },
-    ];
-    
-    for (let i = 0; i < importAttempts.length; i++) {
-      const attempt = importAttempts[i];
-      try {
-        console.log(`Attempt ${i + 1}: extractable=${attempt.extractable}, usages=${attempt.usages.join(',')}`);
-        const publicKey = await window.crypto.subtle.importKey(
-          'jwk',
-          cleanJwk,
-          {
-            name: 'ECDH',
-            namedCurve: 'P-256',
-          },
-          attempt.extractable,
-          attempt.usages
-        );
-        console.log(`✅ ECDH key imported successfully (attempt ${i + 1})`);
-        return publicKey;
-      } catch (attemptError) {
-        console.warn(`Attempt ${i + 1} failed:`, attemptError.message);
-        if (i === importAttempts.length - 1) {
-          // Last attempt failed
-          console.error('All import attempts failed');
-          console.error('Final error:', attemptError);
-          throw new Error('Failed to import ECDH public key: ' + attemptError.message);
-        }
-      }
-    }
+    console.log('✅ ECDH public key imported successfully');
+    return publicKey;
   } catch (error) {
     console.error('ECDH public key import error:', error);
     console.error('JWK received:', jwk);
@@ -373,22 +329,39 @@ async function decryptPrivateKey(encryptedData, password) {
 async function storePrivateKey(userId, encryptedKeyData) {
   try {
     const db = await initDB();
-    const transaction = db.transaction([STORE_NAME], 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
 
-    const keyData = {
-      userId: userId,
-      encryptedPrivateKey: encryptedKeyData.encryptedKey,
-      iv: encryptedKeyData.iv,
-      salt: encryptedKeyData.salt,
-      createdAt: new Date().toISOString(),
-    };
+      const keyData = {
+        userId: userId,
+        encryptedPrivateKey: encryptedKeyData.encryptedKey,
+        iv: encryptedKeyData.iv,
+        salt: encryptedKeyData.salt,
+        createdAt: new Date().toISOString(),
+      };
 
-    await store.put(keyData);
-    return true;
+      const request = store.put(keyData);
+      
+      request.onsuccess = () => {
+        console.log('✅ Private key stored for user:', userId);
+        resolve(true);
+      };
+      
+      request.onerror = () => {
+        console.error('Store request error:', request.error);
+        reject(request.error);
+      };
+      
+      transaction.onerror = () => {
+        console.error('Transaction error:', transaction.error);
+        reject(transaction.error);
+      };
+    });
   } catch (error) {
     console.error('Store private key error:', error);
-    throw new Error('Failed to store private key');
+    throw new Error('Failed to store private key: ' + error.message);
   }
 }
 

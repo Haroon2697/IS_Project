@@ -85,7 +85,9 @@ const Login = () => {
       // Redirect to dashboard
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      console.error('Login error:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'Login failed. Please try again.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
