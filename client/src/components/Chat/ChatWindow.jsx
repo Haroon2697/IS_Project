@@ -14,8 +14,6 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
   const [error, setError] = useState('');
   const [showFiles, setShowFiles] = useState(false);
   const [fileListKey, setFileListKey] = useState(0); // Force re-render
-  const [lastEncryptedMessage, setLastEncryptedMessage] = useState(null);
-  const [replayResult, setReplayResult] = useState('');
   const messagesEndRef = useRef(null);
   
   const user = JSON.parse(localStorage.getItem('user'));
@@ -36,15 +34,11 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
           return;
         }
 
-        // Store the encrypted message for replay demo
-        setLastEncryptedMessage({...encryptedMessage});
-        console.log('📦 Message captured for replay demo');
-        
         const plaintext = await messagingService.decryptMessage(encryptedMessage);
         
         // Skip duplicate messages (null returned from decryptMessage)
         if (plaintext === null) {
-          console.log('⚠️ Skipping duplicate message - REPLAY PROTECTION WORKING');
+          console.log('Replay attack blocked: duplicate message detected by replay protection');
           return;
         }
         
@@ -146,14 +140,14 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
         <h3>{recipientUsername}</h3>
         <div className="status-indicators">
           {sessionKey ? (
-            <span className="secure-indicator">🔒 Secure</span>
+            <span className="secure-indicator">Secure</span>
           ) : (
-            <span className="insecure-indicator">⚠️ Not Secure</span>
+            <span className="insecure-indicator">Not Secure</span>
           )}
           {socketService.isReady() ? (
-            <span className="connection-indicator" title="Connected">🟢</span>
+            <span className="connection-indicator" title="Connected">Connected</span>
           ) : (
-            <span className="connection-indicator" title="Disconnected">🔴</span>
+            <span className="connection-indicator" title="Disconnected">Disconnected</span>
           )}
         </div>
       </div>
@@ -182,68 +176,6 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
       </div>
 
       {error && <div className="error-message">{error}</div>}
-
-      {/* Replay Attack Demo Section - Only visible in development for project demonstration */}
-      {process.env.NODE_ENV === 'development' && (
-      <div className="replay-demo-section" style={{ 
-        padding: '10px', 
-        margin: '10px 0', 
-        background: '#fff3e0', 
-        borderRadius: '8px',
-        border: '1px solid #ff9800'
-      }}>
-        <strong>🔬 Replay Attack Demo (Dev Only)</strong>
-        <p style={{ fontSize: '12px', margin: '5px 0' }}>
-          {lastEncryptedMessage 
-            ? '✅ Message captured! Click button to simulate replay attack.' 
-            : '⏳ Waiting for a message to capture...'}
-        </p>
-        <button
-          onClick={async () => {
-            if (!lastEncryptedMessage) {
-              setReplayResult('❌ No message captured yet. Receive a message first.');
-              return;
-            }
-            setReplayResult('🔄 Attempting replay attack...');
-            try {
-              const result = await messagingService.decryptMessage(lastEncryptedMessage);
-              if (result === null) {
-                setReplayResult('🛡️ REPLAY BLOCKED! Message detected as duplicate.');
-                console.log('🛡️ REPLAY ATTACK BLOCKED - Duplicate nonce/sequence detected');
-              } else {
-                setReplayResult('⚠️ Message decrypted (first time processing)');
-              }
-            } catch (err) {
-              setReplayResult('🛡️ REPLAY BLOCKED! ' + err.message);
-              console.log('🛡️ REPLAY ATTACK BLOCKED:', err.message);
-            }
-          }}
-          disabled={!lastEncryptedMessage}
-          style={{
-            padding: '8px 16px',
-            background: lastEncryptedMessage ? '#f44336' : '#ccc',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: lastEncryptedMessage ? 'pointer' : 'not-allowed',
-            marginRight: '10px'
-          }}
-        >
-          🔴 Simulate Replay Attack
-        </button>
-        {replayResult && (
-          <div style={{ 
-            marginTop: '10px', 
-            padding: '8px', 
-            background: replayResult.includes('BLOCKED') ? '#e8f5e9' : '#ffebee',
-            borderRadius: '4px',
-            fontWeight: 'bold'
-          }}>
-            {replayResult}
-          </div>
-        )}
-      </div>
-      )}
 
       {/* File Sharing Section */}
       <div className="file-sharing-section">

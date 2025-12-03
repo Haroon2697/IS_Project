@@ -30,7 +30,7 @@ class ReplayProtection {
     // Check nonce (must not be seen before)
     if (this.seenNonces.has(nonce)) {
       // For duplicate messages (same nonce), just skip silently
-      console.log('⚠️ Duplicate message detected (same nonce) - skipping');
+      console.log('Duplicate message detected (same nonce) - skipping');
       return false; // Return false instead of throwing - caller should skip this message
     }
 
@@ -38,7 +38,7 @@ class ReplayProtection {
     try {
       const stored = await retrieveData('nonces', nonce);
       if (stored) {
-        console.log('⚠️ Duplicate message detected (nonce in storage) - skipping');
+        console.log('Duplicate message detected (nonce in storage) - skipping');
         return false;
       }
     } catch (e) {
@@ -53,7 +53,7 @@ class ReplayProtection {
     if (!skipSequenceCheck) {
       const lastSequence = this.sequenceNumbers.get(userId) || 0;
       if (sequenceNumber <= lastSequence) {
-        console.log(`⚠️ Out-of-order message (seq ${sequenceNumber} <= ${lastSequence}) - skipping`);
+        console.log(`Out-of-order message (seq ${sequenceNumber} <= ${lastSequence}) - skipping`);
         return false;
       }
       this.sequenceNumbers.set(userId, sequenceNumber);

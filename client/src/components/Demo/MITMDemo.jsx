@@ -78,7 +78,7 @@ const MITMDemo = ({ isVulnerableMode }) => {
     return (
       <div className="mitm-demo-toggle">
         <button onClick={() => setShowDemo(true)} className="btn-demo">
-          🔓 Show MITM Attack Demo
+          Show MITM Attack Demo
         </button>
       </div>
     );
@@ -87,16 +87,16 @@ const MITMDemo = ({ isVulnerableMode }) => {
   return (
     <div className="mitm-demo">
       <div className="mitm-header">
-        <h3>🔓 MITM Attack Demonstration</h3>
+        <h3>MITM Attack Demonstration</h3>
         <button onClick={() => setShowDemo(false)} className="btn-close">×</button>
       </div>
 
       <div className="mitm-status">
         <div className={`mode-indicator ${isVulnerableMode ? 'vulnerable' : 'protected'}`}>
           {isVulnerableMode ? (
-            <>⚠️ VULNERABLE MODE - Signatures Disabled</>
+            <>VULNERABLE MODE - Signatures Disabled</>
           ) : (
-            <>🔒 PROTECTED MODE - Signatures Enabled</>
+            <>PROTECTED MODE - Signatures Enabled</>
           )}
         </div>
       </div>
@@ -157,7 +157,7 @@ const MITMDemo = ({ isVulnerableMode }) => {
               </div>
               {msg.modified && (
                 <div className="msg-modified">
-                  <strong>⚠️ Modified with Attacker's Key:</strong>
+                  <strong>Modified with Attacker's Key:</strong>
                   <pre>{JSON.stringify(msg.modified.senderECDHPublic, null, 2)}</pre>
                 </div>
               )}
@@ -167,7 +167,7 @@ const MITMDemo = ({ isVulnerableMode }) => {
       )}
 
       <div className="mitm-defense">
-        <h4>🛡️ How Signatures Prevent MITM:</h4>
+        <h4>How Signatures Prevent MITM:</h4>
         <ul>
           <li>Each message is signed with sender's private key</li>
           <li>Receiver verifies signature with sender's public key</li>
@@ -177,7 +177,7 @@ const MITMDemo = ({ isVulnerableMode }) => {
       </div>
 
       <div className="demo-instructions">
-        <h4>📋 To Demonstrate the Attack:</h4>
+        <h4>To Demonstrate the Attack:</h4>
         <ol>
           <li>Switch to vulnerable mode: <code>node scripts/switch-mitm-version.js vulnerable</code></li>
           <li>Restart the client</li>

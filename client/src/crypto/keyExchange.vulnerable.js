@@ -2,7 +2,7 @@
  * Key Exchange Protocol Implementation - VULNERABLE VERSION
  * ECDH-MA: Elliptic Curve Diffie-Hellman with Mutual Authentication
  * 
- * ⚠️ WARNING: This is a VULNERABLE version for MITM attack demonstration.
+ * WARNING: This is a VULNERABLE version for MITM attack demonstration.
  * Signatures are DISABLED to show how MITM attacks work.
  * 
  * DO NOT USE THIS IN PRODUCTION!
@@ -142,7 +142,7 @@ export async function processInitMessage(message, receiverId, longTermPrivateKey
     }
     */
     
-    console.warn('⚠️ VULNERABLE MODE: Signature verification DISABLED');
+    console.warn('VULNERABLE MODE: Signature verification DISABLED');
     
     // Store nonce to prevent replay
     await storeNonce(message.nonce, message.timestamp);

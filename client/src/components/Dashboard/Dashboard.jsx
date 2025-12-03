@@ -24,7 +24,7 @@ const Dashboard = () => {
       
       // Check if user is authenticated
       if (!token || !userData) {
-        console.warn('⚠️ No token or user data found, redirecting to login...');
+        console.warn('No token or user data found, redirecting to login...');
         navigate('/login');
         return;
       }
@@ -148,7 +148,7 @@ const Dashboard = () => {
 
         {/* MITM Attack Demonstration Section */}
         <div className="demo-section">
-          <h2>🔒 Security Demonstrations</h2>
+          <h2>Security Demonstrations</h2>
           <MITMDemo isVulnerableMode={isVulnerableMode()} />
         </div>
       </main>
