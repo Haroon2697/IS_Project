@@ -16,14 +16,21 @@ class MessagingService {
    * Store session key for a user
    */
   setSessionKey(userId, sessionKey) {
+    console.log('🔑 Storing session key for user:', userId);
     this.sessionKeys.set(userId, sessionKey);
+    console.log('🔑 Session keys map now has', this.sessionKeys.size, 'entries:', Array.from(this.sessionKeys.keys()));
   }
 
   /**
    * Get session key for a user
    */
   getSessionKey(userId) {
-    return this.sessionKeys.get(userId);
+    const key = this.sessionKeys.get(userId);
+    console.log('🔑 Getting session key for user:', userId, key ? '✅ Found' : '❌ Not found');
+    if (!key) {
+      console.log('🔑 Available keys for:', Array.from(this.sessionKeys.keys()));
+    }
+    return key;
   }
 
   /**
@@ -63,13 +70,18 @@ class MessagingService {
       throw new Error('No session key established with sender');
     }
 
-    // Verify replay protection
-    await replayProtection.checkMessage(
+    // Verify replay protection - returns false for duplicates
+    const isValid = await replayProtection.checkMessage(
       encryptedData.nonce,
       encryptedData.timestamp,
       encryptedData.sequenceNumber,
       encryptedData.senderId
     );
+
+    if (!isValid) {
+      // Duplicate message - return null to indicate skip
+      return null;
+    }
 
     // Decrypt
     const decrypted = await decryptMessageWithMetadata(sessionKey, encryptedData);

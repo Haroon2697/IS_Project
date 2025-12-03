@@ -104,7 +104,7 @@ const FileUpload = ({ recipientId, sessionKey, onUploadComplete }) => {
       
       {!sessionKey && (
         <div className="warning-message">
-          ⚠️ Establish secure connection first before sharing files
+          Establish secure connection first before sharing files
         </div>
       )}
 

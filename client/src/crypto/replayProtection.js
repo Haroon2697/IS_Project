@@ -8,14 +8,18 @@ import { storeData, retrieveData } from '../storage/indexedDB';
 class ReplayProtection {
   constructor() {
     this.seenNonces = new Set();
-    this.sequenceNumbers = new Map(); // userId -> lastSequenceNumber
+    this.sequenceNumbers = new Map(); // oderId -> lastSequenceNumber
     this.timestampWindow = 5 * 60 * 1000; // 5 minutes
+    this.processedMessages = new Set(); // Track processed message IDs
   }
 
   /**
    * Check if message is valid (not a replay)
+   * For key exchange messages, we use relaxed sequence checking
    */
-  async checkMessage(nonce, timestamp, sequenceNumber, userId) {
+  async checkMessage(nonce, timestamp, sequenceNumber, userId, options = {}) {
+    const { skipSequenceCheck = false } = options;
+    
     // Check timestamp (must be within window)
     const now = Date.now();
     const timeDiff = Math.abs(now - timestamp);
@@ -25,33 +29,38 @@ class ReplayProtection {
 
     // Check nonce (must not be seen before)
     if (this.seenNonces.has(nonce)) {
-      throw new Error('Replay attack detected - nonce already seen');
+      // For duplicate messages (same nonce), just skip silently
+      console.log('Duplicate message detected (same nonce) - skipping');
+      return false; // Return false instead of throwing - caller should skip this message
     }
 
     // Check in IndexedDB as well (gracefully handle missing store)
     try {
       const stored = await retrieveData('nonces', nonce);
       if (stored) {
-        throw new Error('Replay attack detected - nonce found in storage');
+        console.log('Duplicate message detected (nonce in storage) - skipping');
+        return false;
       }
     } catch (e) {
       // Nonce not found is good, or store doesn't exist yet (first run)
-      if (!e.message.includes('Replay attack')) {
-        console.log('Nonce check skipped (store may not exist yet)');
-      } else {
-        throw e;
+      if (e.message && e.message.includes('Replay attack')) {
+        return false;
       }
+      // Otherwise continue - store may not exist yet
     }
 
-    // Check sequence number (must be increasing)
-    const lastSequence = this.sequenceNumbers.get(userId) || 0;
-    if (sequenceNumber <= lastSequence) {
-      throw new Error('Invalid sequence number - possible replay or out-of-order message');
+    // Check sequence number (must be increasing) - skip for key exchange
+    if (!skipSequenceCheck) {
+      const lastSequence = this.sequenceNumbers.get(userId) || 0;
+      if (sequenceNumber <= lastSequence) {
+        console.log(`Out-of-order message (seq ${sequenceNumber} <= ${lastSequence}) - skipping`);
+        return false;
+      }
+      this.sequenceNumbers.set(userId, sequenceNumber);
     }
 
     // All checks passed - mark as seen
     this.seenNonces.add(nonce);
-    this.sequenceNumbers.set(userId, sequenceNumber);
 
     // Store nonce in IndexedDB (gracefully handle errors)
     try {

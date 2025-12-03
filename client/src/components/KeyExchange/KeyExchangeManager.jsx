@@ -19,6 +19,13 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
   const [keysLoaded, setKeysLoaded] = useState(false);
   const [showRegenerateOption, setShowRegenerateOption] = useState(false);
 
+  // Log current user info on mount and when props change
+  useEffect(() => {
+    console.log('🔐 KeyExchangeManager initialized:');
+    console.log('   Current User:', currentUsername, '(ID:', currentUserId, ')');
+    console.log('   Recipient:', recipientUsername, '(ID:', recipientId, ')');
+  }, [currentUserId, currentUsername, recipientId, recipientUsername]);
+
   // Load keys function (called on button click to avoid React concurrent rendering issues)
   const loadKeys = async () => {
     // Don't load keys if already loaded or currently loading
@@ -306,7 +313,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
 
       // If we're already in "initiated" state, we both initiated - cancel ours and respond to theirs
       if (status === 'initiated') {
-        console.log('⚠️ Both users initiated! Cancelling our init and responding to theirs.');
+        console.log('Both users initiated. Cancelling our init and responding to theirs.');
         // Clear our init state
         localStorage.removeItem('keyExchange_init');
         ephemeralPrivateKeysRef.current.delete(recipientId);
@@ -532,7 +539,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       
       {isSelfConnection && (
         <div className="error-message" style={{ background: '#ffebee', color: '#c62828', padding: '10px', borderRadius: '4px', marginBottom: '10px' }}>
-          ⚠️ <strong>Error:</strong> You cannot establish a connection with yourself! Please click "Change User" and select a different user.
+          <strong>Error:</strong> You cannot establish a connection with yourself. Please click "Change User" and select a different user.
         </div>
       )}
       
@@ -540,7 +547,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       
       <div className="key-exchange-status">
         Status: <strong>{status}</strong>
-        {sessionKey && <span className="success"> ✅ Session key established</span>}
+        {sessionKey && <span className="success">Session key established</span>}
       </div>
       
       {status === 'idle' && (
@@ -552,7 +559,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
               </button>
               {showRegenerateOption && (
                 <button onClick={regenerateKeys} className="btn-secondary" disabled={keysLoading} style={{ background: '#ff9800', color: 'white' }}>
-                  🔄 Regenerate Keys
+                  Regenerate Keys
                 </button>
               )}
             </div>
@@ -581,7 +588,7 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
       
       {sessionKey && (
         <div className="success-message">
-          ✅ Secure channel established! You can now send encrypted messages.
+          Secure channel established. You can now send encrypted messages.
         </div>
       )}
     </div>

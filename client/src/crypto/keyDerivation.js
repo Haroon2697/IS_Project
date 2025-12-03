@@ -9,9 +9,8 @@
 export async function deriveSessionKey(sharedSecret, salt, senderId, receiverId) {
   try {
     // Create info parameter (context information)
-    const info = new TextEncoder().encode(
-      `session-key-v1-${senderId}-${receiverId}`
-    );
+    const infoString = `session-key-v1-${senderId}-${receiverId}`;
+    const info = new TextEncoder().encode(infoString);
     
     // Convert salt to Uint8Array if it's a string
     let saltArray;
@@ -20,6 +19,10 @@ export async function deriveSessionKey(sharedSecret, salt, senderId, receiverId)
     } else {
       saltArray = salt;
     }
+    
+    console.log('🔐 Deriving session key with:');
+    console.log('   Salt (first 20 chars):', typeof salt === 'string' ? salt.substring(0, 20) : 'binary');
+    console.log('   Info:', infoString);
     
     // Derive key using HKDF
     const sessionKey = await window.crypto.subtle.deriveKey(
@@ -38,6 +41,7 @@ export async function deriveSessionKey(sharedSecret, salt, senderId, receiverId)
       ['encrypt', 'decrypt']
     );
     
+    console.log('✅ Session key derived successfully');
     return sessionKey;
   } catch (error) {
     console.error('Session key derivation error:', error);

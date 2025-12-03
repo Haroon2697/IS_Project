@@ -36,6 +36,12 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
 
         const plaintext = await messagingService.decryptMessage(encryptedMessage);
         
+        // Skip duplicate messages (null returned from decryptMessage)
+        if (plaintext === null) {
+          console.log('Replay attack blocked: duplicate message detected by replay protection');
+          return;
+        }
+        
         setMessages(prev => [...prev, {
           id: Date.now(),
           text: plaintext,
@@ -134,14 +140,14 @@ const ChatWindow = ({ recipientId, recipientUsername, sessionKey }) => {
         <h3>{recipientUsername}</h3>
         <div className="status-indicators">
           {sessionKey ? (
-            <span className="secure-indicator">🔒 Secure</span>
+            <span className="secure-indicator">Secure</span>
           ) : (
-            <span className="insecure-indicator">⚠️ Not Secure</span>
+            <span className="insecure-indicator">Not Secure</span>
           )}
           {socketService.isReady() ? (
-            <span className="connection-indicator" title="Connected">🟢</span>
+            <span className="connection-indicator" title="Connected">Connected</span>
           ) : (
-            <span className="connection-indicator" title="Disconnected">🔴</span>
+            <span className="connection-indicator" title="Disconnected">Disconnected</span>
           )}
         </div>
       </div>

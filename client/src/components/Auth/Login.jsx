@@ -69,9 +69,9 @@ const Login = () => {
         if (userHasKeys) {
           // Verify we can decrypt the key (validates password)
           await retrievePrivateKey(response.user.username, formData.password);
-          console.log('✅ Private key retrieved and verified');
+          console.log('Private key retrieved and verified');
         } else {
-          console.warn('⚠️ No keys found for user. Keys will be generated on first use.');
+          console.warn('No keys found for user. Keys will be generated on first use.');
         }
       } catch (keyError) {
         console.error('Key retrieval error:', keyError);
