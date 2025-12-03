@@ -123,6 +123,9 @@ const io = new Server(server, {
   }
 });
 
+// Pass io instance to key exchange routes for message forwarding
+keyExchangeRoutes.setIO(io);
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log('🔌 User connected:', socket.id);

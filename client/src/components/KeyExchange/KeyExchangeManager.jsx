@@ -19,6 +19,13 @@ const KeyExchangeManager = ({ currentUserId, currentUsername, recipientId, recip
   const [keysLoaded, setKeysLoaded] = useState(false);
   const [showRegenerateOption, setShowRegenerateOption] = useState(false);
 
+  // Log current user info on mount and when props change
+  useEffect(() => {
+    console.log('🔐 KeyExchangeManager initialized:');
+    console.log('   Current User:', currentUsername, '(ID:', currentUserId, ')');
+    console.log('   Recipient:', recipientUsername, '(ID:', recipientId, ')');
+  }, [currentUserId, currentUsername, recipientId, recipientUsername]);
+
   // Load keys function (called on button click to avoid React concurrent rendering issues)
   const loadKeys = async () => {
     // Don't load keys if already loaded or currently loading

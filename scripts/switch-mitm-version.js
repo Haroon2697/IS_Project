@@ -9,9 +9,38 @@ const fs = require('fs');
 const path = require('path');
 
 const CRYPTO_DIR = path.join(__dirname, '../client/src/crypto');
+const CONFIG_DIR = path.join(__dirname, '../client/src/config');
 const ORIGINAL_FILE = path.join(CRYPTO_DIR, 'keyExchange.js');
 const BACKUP_FILE = path.join(CRYPTO_DIR, 'keyExchange.backup.js');
 const VULNERABLE_FILE = path.join(CRYPTO_DIR, 'keyExchange.vulnerable.js');
+const CONFIG_FILE = path.join(CONFIG_DIR, 'securityMode.js');
+
+// Update the security mode config file
+function updateSecurityModeConfig(mode) {
+  const configContent = `/**
+ * Security Mode Configuration
+ * This file indicates whether the app is running in vulnerable or protected mode
+ * 
+ * DO NOT MANUALLY EDIT - Use: node scripts/switch-mitm-version.js [vulnerable|protected]
+ */
+
+// Current mode: 'protected' or 'vulnerable'
+export const SECURITY_MODE = '${mode}';
+
+// Check if running in vulnerable mode
+export const isVulnerableMode = () => SECURITY_MODE === 'vulnerable';
+
+// Check if running in protected mode  
+export const isProtectedMode = () => SECURITY_MODE === 'protected';
+
+export default {
+  SECURITY_MODE,
+  isVulnerableMode,
+  isProtectedMode,
+};
+`;
+  fs.writeFileSync(CONFIG_FILE, configContent);
+}
 
 function switchToVulnerable() {
   try {
@@ -37,6 +66,10 @@ function switchToVulnerable() {
 
     // Replace with vulnerable version
     fs.copyFileSync(VULNERABLE_FILE, ORIGINAL_FILE);
+    
+    // Update config file
+    updateSecurityModeConfig('vulnerable');
+    
     console.log('✅ Switched to VULNERABLE version');
     console.log('⚠️  WARNING: Signatures are DISABLED - for demo only!');
     console.log('   Restart client: cd client && npm start');
@@ -57,6 +90,10 @@ function switchToProtected() {
 
     // Restore original
     fs.copyFileSync(BACKUP_FILE, ORIGINAL_FILE);
+    
+    // Update config file
+    updateSecurityModeConfig('protected');
+    
     console.log('✅ Switched to PROTECTED version');
     console.log('   Signatures are ENABLED');
     console.log('   Restart client: cd client && npm start');

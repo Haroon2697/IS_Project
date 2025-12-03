@@ -5,6 +5,8 @@ import TwoFactorSettings from '../Settings/TwoFactorSettings';
 import KeyExchangeManager from '../KeyExchange/KeyExchangeManager';
 import ChatWindow from '../Chat/ChatWindow';
 import UserSelector from '../Users/UserSelector';
+import MITMDemo from '../Demo/MITMDemo';
+import { isVulnerableMode } from '../../config/securityMode';
 import socketService from '../../services/socketService';
 import './Dashboard.css';
 
@@ -16,32 +18,45 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    
-    // Check if user is authenticated
-    if (!token || !userData) {
-      console.warn('⚠️ No token or user data found, redirecting to login...');
-      navigate('/login');
-      return;
-    }
-    
-    try {
-      const parsedUser = JSON.parse(userData);
-      setUser(parsedUser);
+    const loadUser = () => {
+      const userData = localStorage.getItem('user');
+      const token = localStorage.getItem('token');
       
-      // Connect Socket.io when dashboard loads
-      socketService.connect(token);
-    } catch (err) {
-      console.error('Failed to parse user data:', err);
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      navigate('/login');
-    }
+      // Check if user is authenticated
+      if (!token || !userData) {
+        console.warn('⚠️ No token or user data found, redirecting to login...');
+        navigate('/login');
+        return;
+      }
+      
+      try {
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+        console.log('👤 Dashboard loaded for user:', parsedUser.username, 'ID:', parsedUser.id);
+        
+        // Connect Socket.io when dashboard loads
+        socketService.connect(token);
+      } catch (err) {
+        console.error('Failed to parse user data:', err);
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        navigate('/login');
+      }
+    };
+
+    loadUser();
+
+    // Listen for storage changes (in case user logs in from another tab)
+    const handleStorageChange = (e) => {
+      if (e.key === 'user' || e.key === 'token') {
+        loadUser();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
 
     // Cleanup on unmount
     return () => {
-      // Don't disconnect - keep connection for chat
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, [navigate]);
 
@@ -130,6 +145,12 @@ const Dashboard = () => {
             />
           </div>
         )}
+
+        {/* MITM Attack Demonstration Section */}
+        <div className="demo-section">
+          <h2>🔒 Security Demonstrations</h2>
+          <MITMDemo isVulnerableMode={isVulnerableMode()} />
+        </div>
       </main>
     </div>
   );

@@ -1,6 +1,8 @@
 /**
  * Key Exchange Protocol Implementation
  * ECDH-MA: Elliptic Curve Diffie-Hellman with Mutual Authentication
+ * 
+ * This is the SECURE version with digital signatures enabled.
  */
 
 import { generateECDHKeyPair, importECDHPublicKey, exportPublicKey, importPublicKey } from './keyManagement';
@@ -17,29 +19,33 @@ export async function generateEphemeralKeyPair() {
 
 /**
  * Derive shared secret using ECDH
+ * Returns raw key material that can be used with HKDF
  */
 export async function deriveSharedSecret(ownPrivateKey, peerPublicKey) {
   try {
-    // Derive shared secret - use just 'deriveKey' to match key generation
-    // We can derive bits from the key if needed
-    const sharedSecret = await window.crypto.subtle.deriveKey(
+    // Use deriveBits to get raw shared secret bytes
+    const sharedSecretBits = await window.crypto.subtle.deriveBits(
       {
         name: 'ECDH',
         public: peerPublicKey,
       },
       ownPrivateKey,
-      {
-        name: 'AES-GCM',
-        length: 256,
-      },
+      256 // 256 bits = 32 bytes
+    );
+
+    // Import the raw bits as key material for HKDF
+    const sharedSecret = await window.crypto.subtle.importKey(
+      'raw',
+      sharedSecretBits,
+      { name: 'HKDF' },
       false, // not extractable
-      ['deriveKey'] // Match the key generation usages
+      ['deriveKey', 'deriveBits']
     );
 
     return sharedSecret;
   } catch (error) {
     console.error('ECDH derive error:', error);
-    throw new Error('Failed to derive shared secret');
+    throw new Error('Failed to derive shared secret: ' + error.message);
   }
 }
 
@@ -123,6 +129,8 @@ export async function processInitMessage(message, receiverId, longTermPrivateKey
     if (!isValid) {
       throw new Error('Invalid signature in init message');
     }
+    
+    console.log('✅ Signature verified for init message');
     
     // Store nonce to prevent replay
     await storeNonce(message.nonce, message.timestamp);
@@ -239,6 +247,8 @@ export async function processResponseMessage(
       throw new Error('Invalid signature in response message');
     }
     
+    console.log('✅ Signature verified for response message');
+    
     // Store nonce to prevent replay
     await storeNonce(responseMessage.nonceBob, responseMessage.timestamp);
     
@@ -247,12 +257,6 @@ export async function processResponseMessage(
       console.error('Response message missing senderECDHPublic:', responseMessage);
       throw new Error('Response message missing ephemeral public key');
     }
-    
-    console.log('Importing peer ephemeral public key:', {
-      hasKey: !!responseMessage.senderECDHPublic,
-      keyType: typeof responseMessage.senderECDHPublic,
-      keyKeys: responseMessage.senderECDHPublic ? Object.keys(responseMessage.senderECDHPublic) : 'N/A'
-    });
     
     const peerEphemeralPublicKey = await importECDHPublicKey(responseMessage.senderECDHPublic);
     
@@ -276,6 +280,42 @@ export async function processResponseMessage(
   } catch (error) {
     console.error('Process response message error:', error);
     throw error;
+  }
+}
+
+/**
+ * Derive session key as responder (Bob)
+ * Called after creating response message to derive the shared session key
+ */
+export async function deriveSessionKeyAsResponder(
+  responseMessage,
+  initMessage
+) {
+  try {
+    // Import initiator's ephemeral public key
+    const initiatorEphemeralPublicKey = await importECDHPublicKey(initMessage.senderECDHPublic);
+    
+    // Derive shared secret using our ephemeral private key and initiator's ephemeral public key
+    const sharedSecret = await deriveSharedSecret(
+      responseMessage._ephemeralPrivateKey,
+      initiatorEphemeralPublicKey
+    );
+    
+    // Derive session key using HKDF with same parameters as initiator
+    const combinedNonces = initMessage.nonce + responseMessage.nonceBob;
+    const sessionKey = await deriveSessionKey(
+      sharedSecret,
+      combinedNonces,
+      initMessage.senderId,
+      responseMessage.senderId
+    );
+    
+    console.log('✅ Session key derived as responder');
+    
+    return sessionKey;
+  } catch (error) {
+    console.error('Derive session key as responder error:', error);
+    throw new Error('Failed to derive session key as responder: ' + error.message);
   }
 }
 
@@ -364,19 +404,8 @@ async function storeNonce(nonce, timestamp) {
       timestamp,
       createdAt: new Date().toISOString(),
     });
-    
-    // Clean up old nonces (older than 10 minutes)
-    setTimeout(async () => {
-      try {
-        const { clearStore } = await import('../storage/indexedDB');
-        // In production, implement proper cleanup logic
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-    }, 10 * 60 * 1000);
   } catch (error) {
     console.error('Store nonce error:', error);
-    // Don't throw - nonce storage failure shouldn't block key exchange
   }
 }
 
@@ -392,5 +421,4 @@ export async function isNonceSeen(nonce) {
     return false;
   }
 }
-
 

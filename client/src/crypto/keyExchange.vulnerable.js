@@ -23,27 +23,33 @@ export async function generateEphemeralKeyPair() {
 
 /**
  * Derive shared secret using ECDH
+ * Returns raw key material that can be used with HKDF
  */
 export async function deriveSharedSecret(ownPrivateKey, peerPublicKey) {
   try {
-    const sharedSecret = await window.crypto.subtle.deriveKey(
+    // Use deriveBits to get raw shared secret bytes
+    const sharedSecretBits = await window.crypto.subtle.deriveBits(
       {
         name: 'ECDH',
         public: peerPublicKey,
       },
       ownPrivateKey,
-      {
-        name: 'AES-GCM',
-        length: 256,
-      },
+      256 // 256 bits = 32 bytes
+    );
+
+    // Import the raw bits as key material for HKDF
+    const sharedSecret = await window.crypto.subtle.importKey(
+      'raw',
+      sharedSecretBits,
+      { name: 'HKDF' },
       false, // not extractable
-      ['deriveKey']
+      ['deriveKey', 'deriveBits']
     );
 
     return sharedSecret;
   } catch (error) {
     console.error('ECDH derive error:', error);
-    throw new Error('Failed to derive shared secret');
+    throw new Error('Failed to derive shared secret: ' + error.message);
   }
 }
 
@@ -292,6 +298,42 @@ export async function processResponseMessage(
   } catch (error) {
     console.error('Process response message error:', error);
     throw error;
+  }
+}
+
+/**
+ * Derive session key as responder (Bob)
+ * Called after creating response message to derive the shared session key
+ */
+export async function deriveSessionKeyAsResponder(
+  responseMessage,
+  initMessage
+) {
+  try {
+    // Import initiator's ephemeral public key
+    const initiatorEphemeralPublicKey = await importECDHPublicKey(initMessage.senderECDHPublic);
+    
+    // Derive shared secret using our ephemeral private key and initiator's ephemeral public key
+    const sharedSecret = await deriveSharedSecret(
+      responseMessage._ephemeralPrivateKey,
+      initiatorEphemeralPublicKey
+    );
+    
+    // Derive session key using HKDF with same parameters as initiator
+    const combinedNonces = initMessage.nonce + responseMessage.nonceBob;
+    const sessionKey = await deriveSessionKey(
+      sharedSecret,
+      combinedNonces,
+      initMessage.senderId,
+      responseMessage.senderId
+    );
+    
+    console.log('✅ Session key derived as responder (VULNERABLE MODE)');
+    
+    return sessionKey;
+  } catch (error) {
+    console.error('Derive session key as responder error:', error);
+    throw new Error('Failed to derive session key as responder: ' + error.message);
   }
 }
 
